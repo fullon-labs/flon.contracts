@@ -1,0 +1,62 @@
+#pragma once
+#include <eosio/testing/tester.hpp>
+
+namespace eosio::testing {
+
+struct contracts {
+   static std::vector<uint8_t> system_wasm() { return read_wasm("${CMAKE_BINARY_DIR}/contracts/flon.system/flon.system.wasm"); }
+   static std::vector<char>    system_abi() { return read_abi("${CMAKE_BINARY_DIR}/contracts/flon.system/flon.system.abi"); }
+   static std::vector<uint8_t> token_wasm() { return read_wasm("${CMAKE_BINARY_DIR}/contracts/flon.token/flon.token.wasm"); }
+   #ifdef ENABLE_REX
+   static std::vector<uint8_t> fees_wasm() { return read_wasm("${CMAKE_BINARY_DIR}/contracts/flon.fees/flon.fees.wasm"); }
+   #endif//ENABLE_REX
+   static std::vector<char>    token_abi() { return read_abi("${CMAKE_BINARY_DIR}/contracts/flon.token/flon.token.abi"); }
+   static std::vector<uint8_t> msig_wasm() { return read_wasm("${CMAKE_BINARY_DIR}/contracts/flon.msig/flon.msig.wasm"); }
+   static std::vector<char>    msig_abi() { return read_abi("${CMAKE_BINARY_DIR}/contracts/flon.msig/flon.msig.abi"); }
+   static std::vector<uint8_t> wrap_wasm() { return read_wasm("${CMAKE_BINARY_DIR}/contracts/flon.wrap/flon.wrap.wasm"); }
+   static std::vector<char>    wrap_abi() { return read_abi("${CMAKE_BINARY_DIR}/contracts/flon.wrap/flon.wrap.abi"); }
+   static std::vector<uint8_t> bios_wasm() { return read_wasm("${CMAKE_BINARY_DIR}/contracts/flon.bios/flon.bios.wasm"); }
+   static std::vector<char>    bios_abi() { return read_abi("${CMAKE_BINARY_DIR}/contracts/flon.bios/flon.bios.abi"); }
+   #ifdef ENABLE_BPAY
+   static std::vector<uint8_t> bpay_wasm() { return read_wasm("${CMAKE_BINARY_DIR}/contracts/flon.bpay/flon.bpay.wasm"); }
+   static std::vector<char>    bpay_abi() { return read_abi("${CMAKE_BINARY_DIR}/contracts/flon.bpay/flon.bpay.abi"); }
+   #endif//ENABLE_BPAY
+   static std::vector<uint8_t> boot_wasm() { return read_wasm("${CMAKE_BINARY_DIR}/contracts/flon.boot/flon.boot.wasm"); }
+   static std::vector<char>    boot_abi() { return read_abi("${CMAKE_BINARY_DIR}/contracts/flon.boot/flon.boot.abi"); }
+   static std::vector<uint8_t> reward_wasm() { return read_wasm("${CMAKE_BINARY_DIR}/contracts/flon.reward/flon.reward.wasm"); }
+   static std::vector<char>    reward_abi() { return read_abi("${CMAKE_BINARY_DIR}/contracts/flon.reward/flon.reward.abi"); }
+
+   struct util {
+      static std::vector<uint8_t> reject_all_wasm() { return read_wasm("${CMAKE_BINARY_DIR}/contracts/test_contracts/reject_all/reject_all.wasm"); }
+      static std::vector<uint8_t> exchange_wasm() { return read_wasm("${CMAKE_CURRENT_SOURCE_DIR}/test_contracts/exchange.wasm"); }
+      // static std::vector<uint8_t> system_wasm_v1_8() { return read_wasm("${CMAKE_CURRENT_SOURCE_DIR}/test_contracts/old_versions/v1.8.3/flon.system/flon.system.wasm"); }
+      // static std::vector<char>    system_abi_v1_8() { return read_abi("${CMAKE_CURRENT_SOURCE_DIR}/test_contracts/old_versions/v1.8.3/flon.system/flon.system.abi"); }
+      // static std::vector<uint8_t> system_wasm_old() { return read_wasm("${CMAKE_CURRENT_SOURCE_DIR}/test_contracts/old_versions/v1.2.1/flon.system/flon.system.wasm"); }
+      // static std::vector<char>    system_abi_old() { return read_abi("${CMAKE_CURRENT_SOURCE_DIR}/test_contracts/old_versions/v1.2.1/flon.system/flon.system.abi"); }
+      // static std::vector<uint8_t> msig_wasm_old() { return read_wasm("${CMAKE_CURRENT_SOURCE_DIR}/test_contracts/old_versions/v1.2.1/flon.msig/flon.msig.wasm"); }
+      // static std::vector<char>    msig_abi_old() { return read_abi("${CMAKE_CURRENT_SOURCE_DIR}/test_contracts/old_versions/v1.2.1/flon.msig/flon.msig.abi"); }
+   };
+};
+
+} // namespace eosio::testing
+
+namespace system_contracts::testing::test_contracts {
+
+inline std::vector<uint8_t> blockinfo_tester_wasm()
+{
+   return eosio::testing::read_wasm(
+      "${CMAKE_BINARY_DIR}/contracts/test_contracts/blockinfo_tester/blockinfo_tester.wasm");
+}
+inline std::vector<uint8_t> sendinline_wasm()
+{
+   return eosio::testing::read_wasm(
+      "${CMAKE_BINARY_DIR}/contracts/test_contracts/sendinline/sendinline.wasm");
+}
+inline std::vector<char>    sendinline_abi()
+{
+   return eosio::testing::read_abi(
+      "${CMAKE_BINARY_DIR}/contracts/test_contracts/sendinline/sendinline.abi");
+}
+
+
+} // namespace system_contracts::testing::test_contracts
