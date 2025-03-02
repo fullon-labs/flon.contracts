@@ -100,18 +100,6 @@ void pubkey_token::move(const name& miner, const eosio::public_key& pubkey, cons
    idx.erase(itr);
 }
 
-// void pubkey_token::checkpubkey(const string& pubkey_str, eosio::public_key& pubkey) {
-//    auto pk1 =  str_to_pubkey(pubkey_str);
-//    check(pk1 == pubkey, "Invalid public key:check");
-
-//    pubkey_t::idx_t idx(_self, _self.value);
-//    idx.emplace(_self, [&](auto& row) {
-//       row.id      = idx.available_primary_key();
-//       row.pubkey1 = pk1;
-//       row.pubkey2 = pubkey;
-//    });
-   
-// }
 
 } // namespace flon
 

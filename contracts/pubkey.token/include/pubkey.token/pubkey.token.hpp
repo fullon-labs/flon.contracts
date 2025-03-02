@@ -71,8 +71,6 @@ public:
      **/
     ACTION move(const name& miner, const eosio::public_key& pubkey, const time_point& last_recv_at, const name& to_acct, const eosio::signature& sig);
 
-    ACTION checkpubkey(const string& pubkey_str, eosio::public_key& pubkey); 
-    
     ACTION init( const name& admin) {
         _check_admin( );
         _gstate.admin  = admin;
