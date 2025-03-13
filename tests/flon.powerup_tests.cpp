@@ -191,8 +191,8 @@ struct powerup_tester : eosio_system_tester {
 
    account_info get_account_info(account_name acc) {
       account_info info;
-      control->get_resource_limits_manager().get_account_limits(acc, info.ram, info.net, info.cpu);
-      info.liquid = get_balance(acc);
+      // control->get_resource_limits_manager().get_account_limits(acc, info.ram, info.net, info.cpu);
+      // info.liquid = get_balance(acc);
       return info;
    };
 

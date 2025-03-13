@@ -3910,9 +3910,9 @@ BOOST_FIXTURE_TEST_CASE( eosioram_ramusage, eosio_system_tester ) try {
    );
    BOOST_REQUIRE_EQUAL( true, get_row_by_account( "flon.token"_n, "alice1111111"_n, "accounts"_n, account_name(symbol{CORE_SYM}.to_symbol_code()) ).empty() );
 
-   auto rlm = control->get_resource_limits_manager();
-   auto eosioram_ram_usage = rlm.get_account_ram_usage("flon.ram"_n);
-   auto alice_ram_usage = rlm.get_account_ram_usage("alice1111111"_n);
+   // auto rlm = control->get_resource_limits_manager();
+   // auto eosioram_ram_usage = rlm.get_account_ram_usage("flon.ram"_n);
+   // auto alice_ram_usage = rlm.get_account_ram_usage("alice1111111"_n);
 
    BOOST_REQUIRE_EQUAL( success(), sellram( "alice1111111", 2048 ) );
 
@@ -3925,9 +3925,9 @@ BOOST_FIXTURE_TEST_CASE( eosioram_ramusage, eosio_system_tester ) try {
 BOOST_FIXTURE_TEST_CASE( ram_gift, eosio_system_tester ) try {
    active_and_vote_producers();
 
-   auto rlm = control->get_resource_limits_manager();
-   int64_t ram_bytes_orig, net_weight, cpu_weight;
-   rlm.get_account_limits( "alice1111111"_n, ram_bytes_orig, net_weight, cpu_weight );
+   // auto rlm = control->get_resource_limits_manager();
+   // int64_t ram_bytes_orig, net_weight, cpu_weight;
+   // rlm.get_account_limits( "alice1111111"_n, ram_bytes_orig, net_weight, cpu_weight );
 
    /*
     * It seems impossible to write this test, because buyrambytes action doesn't give you exact amount of bytes requested

@@ -261,14 +261,14 @@ namespace eosiosystem {
          check( !(ram_managed || net_managed || cpu_managed), "cannot use setalimits on an account with managed resources" );
       }
 
-      set_resource_limits( account, ram, net, cpu );
+      // set_resource_limits( account, ram, net, cpu );
    }
 
    void system_contract::setacctram( const name& account, const std::optional<int64_t>& ram_bytes ) {
       require_auth( get_self() );
 
-      int64_t current_ram, current_net, current_cpu;
-      get_resource_limits( account, current_ram, current_net, current_cpu );
+      // int64_t current_ram, current_net, current_cpu;
+      // get_resource_limits( account, current_ram, current_net, current_cpu );
 
       int64_t ram = 0;
 
@@ -306,14 +306,14 @@ namespace eosiosystem {
          ram = *ram_bytes;
       }
 
-      set_resource_limits( account, ram, current_net, current_cpu );
+      // set_resource_limits( account, ram, current_net, current_cpu );
    }
 
    void system_contract::setacctnet( const name& account, const std::optional<int64_t>& net_weight ) {
       require_auth( get_self() );
 
-      int64_t current_ram, current_net, current_cpu;
-      get_resource_limits( account, current_ram, current_net, current_cpu );
+      // int64_t current_ram, current_net, current_cpu;
+      // get_resource_limits( account, current_ram, current_net, current_cpu );
 
       int64_t net = 0;
 
@@ -350,14 +350,14 @@ namespace eosiosystem {
          net = *net_weight;
       }
 
-      set_resource_limits( account, current_ram, net, current_cpu );
+      // set_resource_limits( account, current_ram, net, current_cpu );
    }
 
    void system_contract::setacctcpu( const name& account, const std::optional<int64_t>& cpu_weight ) {
       require_auth( get_self() );
 
-      int64_t current_ram, current_net, current_cpu;
-      get_resource_limits( account, current_ram, current_net, current_cpu );
+      // int64_t current_ram, current_net, current_cpu;
+      // get_resource_limits( account, current_ram, current_net, current_cpu );
 
       int64_t cpu = 0;
 
@@ -394,7 +394,7 @@ namespace eosiosystem {
          cpu = *cpu_weight;
       }
 
-      set_resource_limits( account, current_ram, current_net, cpu );
+      // set_resource_limits( account, current_ram, current_net, cpu );
    }
 
    void system_contract::activate( const eosio::checksum256& feature_digest ) {
@@ -545,7 +545,7 @@ namespace eosiosystem {
         res.cpu_weight = asset( 0, system_contract::get_core_symbol(get_self()) );
       });
 
-      set_resource_limits( new_account_name, 0, 0, 0 );
+      // set_resource_limits( new_account_name, 0, 0, 0 );
    }
 
    void native::setabi( const name& acnt, const std::vector<char>& abi,
