@@ -80,7 +80,7 @@ export CMAKE_FRAMEWORK_PATH="${CDT_INSTALL_DIR}:${CMAKE_FRAMEWORK_PATH}"
 
 if [[ ${BUILD_TESTS} == true ]]; then
    # Ensure flon version is appropriate.
-   amnod-version-check
+   flon-version-check
 
    # Include FLON_INSTALL_DIR in CMAKE_FRAMEWORK_PATH
    echo "Using FLON installation at: $FLON_INSTALL_DIR"

@@ -84,10 +84,10 @@ function flon-directory-prompt() {
 }
 
 
-# Prompts or default behavior for choosing flon.CDT directory.
+# Prompts or default behavior for choosing FLON.CDT directory.
 function cdt-directory-prompt() {
   if [[ -z $CDT_DIR_PROMPT ]]; then
-    echo 'No flon.CDT location was specified.'
+    echo 'No FLON.CDT location was specified.'
     while true; do
       if [[ $NONINTERACTIVE != true ]]; then
         printf "Is FLON.CDT installed in the default location? /usr/local/flon.cdt (y/n)" && read -p " " PROCEED
@@ -95,11 +95,11 @@ function cdt-directory-prompt() {
       echo ""
       case $PROCEED in
         "" )
-          echo "Is flon.CDT installed in the default location?";;
+          echo "Is FLON.CDT installed in the default location?";;
         0 | true | [Yy]* )
           break;;
         1 | false | [Nn]* )
-          printf "Enter the installation location of flon.CDT:" && read -e -p " " CDT_DIR_PROMPT;
+          printf "Enter the installation location of FLON.CDT:" && read -e -p " " CDT_DIR_PROMPT;
           CDT_DIR_PROMPT="${CDT_DIR_PROMPT/#\~/$HOME}"
           break;;
         * )
@@ -112,7 +112,7 @@ function cdt-directory-prompt() {
 
 
 # Ensures FLON is installed and compatible via version listed in tests/CMakeLists.txt.
-function amnod-version-check() {
+function flon-version-check() {
   INSTALLED_VERSION=$(echo $($FLON_INSTALL_DIR/bin/amnod --version))
   INSTALLED_VERSION_MAJOR=$(echo $INSTALLED_VERSION | cut -f1 -d '.' | sed 's/v//g')
   INSTALLED_VERSION_MINOR=$(echo $INSTALLED_VERSION | cut -f2 -d '.' | sed 's/v//g')
