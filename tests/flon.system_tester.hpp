@@ -1292,6 +1292,14 @@ public:
       return push_action(voter, "voterefund"_n, mvo()("owner", voter));
    }
 
+   action_result cfgelection() {
+      auto start_time = control->pending_block_time();
+      return push_action(config::system_account_name, "cfgelection"_n, mvo()
+            ("election_activated_time", start_time)
+            ("reward_started_time", start_time)
+            ("initial_rewards_per_block", core_sym::from_string("0.8000")) );
+   }
+
    uint32_t last_block_time() const {
       return time_point_sec( control->head().block_time() ).sec_since_epoch();
    }
@@ -1554,6 +1562,7 @@ public:
                              )
          );
       }
+      cfgelection();
       // produce_blocks( 2 * 21 ); // This is minimum number of blocks required by ram_gift in system_tests
       produce_blocks( 250 );
       auto producer_schedule = control->active_producers();
@@ -1566,6 +1575,7 @@ public:
    void cross_15_percent_threshold() {
       setup_producer_accounts({"producer1111"_n});
       regproducer("producer1111"_n);
+      cfgelection();
       {
          signed_transaction trx;
          set_transaction_headers(trx);
