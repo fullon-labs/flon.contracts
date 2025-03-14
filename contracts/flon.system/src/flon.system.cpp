@@ -350,7 +350,8 @@ namespace eosiosystem {
       // TODO: new user table
       // user_resources_table  userres( get_self(), new_account_name.value );
 
-      // set_resource_limits( new_account_name, 0, 0, 0 );
+      // make sure the new account is resource limited.
+      set_resource_limits( new_account_name, 0, false );
    }
 
    void native::setabi( const name& acnt, const std::vector<char>& abi,
