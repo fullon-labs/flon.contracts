@@ -194,22 +194,17 @@ namespace eosiosystem {
       set_privileged( account, ispriv );
    }
 
-   void system_contract::setalimits( const name& account, int64_t ram, int64_t net, int64_t cpu ) {
+   void system_contract::setalimits( const name& account, uint64_t gas, bool is_unlimited ) {
       require_auth( get_self() );
+      check( is_account(account), "account not exists" );
 
-      user_resources_table userres( get_self(), account.value );
-      auto ritr = userres.find( account.value );
-      check( ritr == userres.end(), "only supports unlimited accounts" );
+      // TODO: validate gas range?
+      uint64_t gas_old = 0;
+      bool is_unlimited_old = true;
+      eosio::get_resource_limits( account, gas_old, is_unlimited_old );
 
-      auto vitr = _voters.find( account.value );
-      if( vitr != _voters.end() ) {
-         bool ram_managed = has_field( vitr->flags1, voter_info::flags1_fields::ram_managed );
-         bool net_managed = has_field( vitr->flags1, voter_info::flags1_fields::net_managed );
-         bool cpu_managed = has_field( vitr->flags1, voter_info::flags1_fields::cpu_managed );
-         check( !(ram_managed || net_managed || cpu_managed), "cannot use setalimits on an account with managed resources" );
-      }
-
-      // set_resource_limits( account, ram, net, cpu );
+      check( gas != gas_old && is_unlimited != is_unlimited_old, "data does not have change");
+      eosio::set_resource_limits( account, gas, is_unlimited );
    }
 
    void system_contract::setacctnet( const name& account, const std::optional<int64_t>& net_weight ) {

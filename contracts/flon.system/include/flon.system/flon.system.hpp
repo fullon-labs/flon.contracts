@@ -657,12 +657,11 @@ namespace eosiosystem {
           * Set account limits action sets the resource limits of an account
           *
           * @param account - name of the account whose resource limit to be set,
-          * @param ram_bytes - ram limit in absolute bytes,
-          * @param net_weight - fractionally proportionate net limit of available resources based on (weight / total_weight_of_all_accounts),
-          * @param cpu_weight - fractionally proportionate cpu limit of available resources based on (weight / total_weight_of_all_accounts).
+          * @param gas - reserved gas to be set,
+          * @param is_unlimited - whether the account has unlimited resources.
           */
          [[eosio::action]]
-         void setalimits( const name& account, int64_t ram_bytes, int64_t net_weight, int64_t cpu_weight );
+         void setalimits( const name& account, uint64_t gas, bool is_unlimited );
 
          /**
           * Set account NET limits action, which sets the NET limits of an account
