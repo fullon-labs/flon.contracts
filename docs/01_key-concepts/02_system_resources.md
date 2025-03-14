@@ -9,7 +9,6 @@ The EOS blockchain works with three system resources: CPU, NET and RAM. The EOS 
 * [NET Resource](./04_net.md)
 
 To allocate RAM resources to an account you have to [purchase RAM](./05_ram.md#how-to-purchase-ram).
-To allocate CPU and NET resources to an account you have to [power up the account](./07_powerup_model.md#power-up-your-account).
 
 ## Resource Cost Estimation
 

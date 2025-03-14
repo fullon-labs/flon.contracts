@@ -30,14 +30,7 @@ namespace eosiosystem {
     _global3(get_self(), get_self().value),
     _global4(get_self(), get_self().value),
     _schedules(get_self(), get_self().value),
-    _rammarket(get_self(), get_self().value),
-    _rexpool(get_self(), get_self().value),
-    _rexretpool(get_self(), get_self().value),
-    _rexretbuckets(get_self(), get_self().value),
-    _rexfunds(get_self(), get_self().value),
-    _rexbalance(get_self(), get_self().value),
-    _rexorders(get_self(), get_self().value),
-    _rexmaturity(get_self(), get_self().value)
+    _rammarket(get_self(), get_self().value)
    {
       _gstate  = _global.exists() ? _global.get() : get_default_parameters();
       _gstate2 = _global2.exists() ? _global2.get() : eosio_global_state2{};
@@ -589,9 +582,6 @@ namespace eosiosystem {
          m.quote.balance.amount = system_token_supply.amount / 1000;
          m.quote.balance.symbol = core;
       });
-
-      token::open_action open_act{ token_account, { {get_self(), active_permission} } };
-      open_act.send( rex_account, core, get_self() );
 
       flon::flon_reward::init_action init_act{ reward_account, { {get_self(), active_permission} } };
       init_act.send( core );

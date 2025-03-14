@@ -430,7 +430,7 @@ BOOST_FIXTURE_TEST_CASE( update_system_contract_all_approve, eosio_msig_tester )
    set_code( "flon.reward"_n, contracts::reward_wasm());
    set_abi( "flon.reward"_n, contracts::reward_abi().data() );
 
-   create_accounts( { "flon.token"_n, "flon.rex"_n } );
+   create_accounts( { "flon.token"_n } );
    set_code( "flon.token"_n, contracts::token_wasm() );
    set_abi( "flon.token"_n, contracts::token_abi().data() );
 
@@ -554,7 +554,7 @@ BOOST_FIXTURE_TEST_CASE( update_system_contract_major_approve, eosio_msig_tester
    set_code( "flon.reward"_n, contracts::reward_wasm());
    set_abi( "flon.reward"_n, contracts::reward_abi().data() );
 
-   create_accounts( { "flon.token"_n, "flon.rex"_n } );
+   create_accounts( { "flon.token"_n} );
    set_code( "flon.token"_n, contracts::token_wasm() );
    set_abi( "flon.token"_n, contracts::token_abi().data() );
 

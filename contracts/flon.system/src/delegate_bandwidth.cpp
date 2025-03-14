@@ -347,7 +347,6 @@ namespace eosiosystem {
          }
       }
 
-      // vote_stake_updater( from );
       // const int64_t staked = update_voting_power( from, stake_net_delta + stake_cpu_delta );
 
       if( _voters.find( from.value ) == _voters.end() ) {

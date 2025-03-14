@@ -19,6 +19,3 @@ For the accounts that execute transactions, the blockchain calculates and update
 * [The transaction NET billing](https://github.com/fullon-labs/fullon/blob/main/libraries/chain/controller.cpp#L3030)
 * [The check of NET usage for a transaction](https://github.com/fullon-labs/fullon/blob/main/libraries/chain/transaction_context.cpp#L416)
 
-## How To Rent NET
-
-For details on how to rent NET resources refer to the [Account Power Up](./07_powerup_model.md#power-up-your-account) section.

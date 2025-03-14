@@ -7,9 +7,6 @@ struct contracts {
    static std::vector<uint8_t> system_wasm() { return read_wasm("${CMAKE_BINARY_DIR}/contracts/flon.system/flon.system.wasm"); }
    static std::vector<char>    system_abi() { return read_abi("${CMAKE_BINARY_DIR}/contracts/flon.system/flon.system.abi"); }
    static std::vector<uint8_t> token_wasm() { return read_wasm("${CMAKE_BINARY_DIR}/contracts/flon.token/flon.token.wasm"); }
-   #ifdef ENABLE_REX
-   static std::vector<uint8_t> fees_wasm() { return read_wasm("${CMAKE_BINARY_DIR}/contracts/flon.fees/flon.fees.wasm"); }
-   #endif//ENABLE_REX
    static std::vector<char>    token_abi() { return read_abi("${CMAKE_BINARY_DIR}/contracts/flon.token/flon.token.abi"); }
    static std::vector<uint8_t> msig_wasm() { return read_wasm("${CMAKE_BINARY_DIR}/contracts/flon.msig/flon.msig.wasm"); }
    static std::vector<char>    msig_abi() { return read_abi("${CMAKE_BINARY_DIR}/contracts/flon.msig/flon.msig.abi"); }
