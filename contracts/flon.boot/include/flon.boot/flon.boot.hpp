@@ -2,6 +2,7 @@
 
 #include <eosio/crypto.hpp>
 #include <eosio/eosio.hpp>
+#include <eosio/producer_schedule.hpp>
 
 namespace eosioboot {
 
@@ -72,6 +73,21 @@ namespace eosioboot {
 
       // explicit serialization macro is not necessary, used here only to improve compilation time
       EOSLIB_SERIALIZE( authority, (threshold)(keys)(accounts)(waits) )
+   };
+
+   struct block_header {
+      uint32_t                                  timestamp;
+      name                                      producer;
+      uint16_t                                  confirmed = 0;
+      checksum256                               previous;
+      checksum256                               transaction_mroot;
+      checksum256                               action_mroot;
+      uint32_t                                  schedule_version = 0;
+      std::optional<eosio::producer_schedule>   new_producers;
+
+      // explicit serialization macro is not necessary, used here only to improve compilation time
+      EOSLIB_SERIALIZE(block_header, (timestamp)(producer)(confirmed)(previous)(transaction_mroot)(action_mroot)
+                                     (schedule_version)(new_producers))
    };
 
    /**
@@ -224,6 +240,18 @@ namespace eosioboot {
           */
          [[eosio::action]]
          void onerror( ignore<uint128_t> sender_id, ignore<std::vector<char>> sent_trx );
+
+                  /**
+          * On block action. This special action is triggered when a block is applied by the given producer
+          * and cannot be generated from any other source. It is used to pay producers and calculate
+          * missed blocks of other producers. Producer pay is deposited into the producer's stake
+          * balance and can be withdrawn over time. Once a minute, it may update the active producer config from the
+          * producer votes. The action also populates the blockinfo table.
+          *
+          * @param header - the block header produced.
+          */
+         [[eosio::action]]
+         void onblock( ignore<block_header> header ){}
 
          /**
           * Activates a protocol feature.
