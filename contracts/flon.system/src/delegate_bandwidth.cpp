@@ -20,245 +20,55 @@ namespace eosiosystem {
    using eosio::token;
 
    /**
-    *  This action will buy an exact amount of ram and bill the payer the current market price.
+    * Buy self gas action, gas can only be purchased to itself.
     */
-   action_return_buyram system_contract::buyrambytes( const name& payer, const name& receiver, uint32_t bytes ) {
-      auto itr = _rammarket.find(ramcore_symbol.raw());
-      const int64_t ram_reserve   = itr->base.balance.amount;
-      const int64_t eos_reserve   = itr->quote.balance.amount;
-      const int64_t cost          = exchange_state::get_bancor_input( ram_reserve, eos_reserve, bytes );
-      const int64_t cost_plus_fee = cost / double(0.995);
-      return buyram( payer, receiver, asset{ cost_plus_fee, core_symbol() } );
+   void system_contract::buygasself( const name& account, const asset& quant ) {
+      return buygas( account, account, quant );
    }
 
    /**
-    * Buy self ram action, ram can only be purchased to itself.
-    */
-   action_return_buyram system_contract::buyramself( const name& account, const asset& quant ) {
-      return buyram( account, account, quant );
-   }
-
-   /**
-    *  When buying ram the payer irreversibly transfers quant to system contract and only
-    *  the receiver may reclaim the tokens via the sellram action. The receiver pays for the
+    *  When buying gas the payer irreversibly transfers quant to system contract. The receiver pays for the
     *  storage of all database records associated with this action.
     *
-    *  RAM is a scarce resource whose supply is defined by global properties max_ram_size. RAM is
-    *  priced using the bancor algorithm such that price-per-byte with a constant reserve ratio of 100:1.
     */
-   action_return_buyram system_contract::buyram( const name& payer, const name& receiver, const asset& quant )
+   void system_contract::buygas( const name& payer, const name& receiver, const asset& quant )
    {
       require_auth( payer );
-      update_ram_supply();
-      require_recipient(payer);
-      require_recipient(receiver);
 
-      check( quant.symbol == core_symbol(), "must buy ram with core token" );
+      check( quant.symbol == core_symbol(), "must buy gas with core token" );
       check( quant.amount > 0, "must purchase a positive amount" );
+      check( is_account(receiver), "receiver account not exists" );
+      // TODO: limit the max quant?
 
-      asset fee = quant;
-      fee.amount = ( fee.amount + 199 ) / 200; /// .5% fee (round up)
+      //TODO: fee of buygas?
+      // asset fee = quant;
+      // fee.amount = ( fee.amount + 199 ) / 200; /// .5% fee (round up)
       // fee.amount cannot be 0 since that is only possible if quant.amount is 0 which is not allowed by the assert above.
       // If quant.amount == 1, then fee.amount == 1,
       // otherwise if quant.amount > 1, then 0 < fee.amount < quant.amount.
-      asset quant_after_fee = quant;
-      quant_after_fee.amount -= fee.amount;
+      // asset quant_after_fee = quant;
+      // quant_after_fee.amount -= fee.amount;
       // quant_after_fee.amount should be > 0 if quant.amount > 1.
-      // If quant.amount == 1, then quant_after_fee.amount == 0 and the next inline transfer will fail causing the buyram action to fail.
       {
-         token::transfer_action transfer_act{ token_account, { {payer, active_permission}, {ram_account, active_permission} } };
-         transfer_act.send( payer, ram_account, quant_after_fee, "buy ram" );
+         // TODO: should open gas_account of flon.token in init()
+         token::transfer_action transfer_act{ token_account, { {payer, active_permission}, {gas_account, active_permission} } };
+         transfer_act.send( payer, gas_account, quant, "buy gas" );
       }
-      if ( fee.amount > 0 ) {
-         token::transfer_action transfer_act{ token_account, { {payer, active_permission} } };
-         transfer_act.send( payer, ramfee_account, fee, "ram fee" );
-         channel_to_system_fees( ramfee_account, fee );
-      }
+      // if ( fee.amount > 0 ) {
+      //    token::transfer_action transfer_act{ token_account, { {payer, active_permission} } };
+      //    transfer_act.send( payer, gasfee_account, fee, "gas fee" );
+      //    channel_to_system_fees( gasfee_account, fee );
+      // }
+      uint64_t reserved_gas = 0;
+      bool is_unlimited = true;
+      eosio::get_resource_limits( receiver, reserved_gas, is_unlimited );
 
-      int64_t bytes_out;
+      check( std::numeric_limits<uint64_t>::max() - reserved_gas >= (uint64_t)quant.amount,
+                  "Overflow when calculating new gas");
+      // TODO: limit max reserved_gas ?
+      reserved_gas +=  (uint64_t)quant.amount;
 
-      const auto& market = _rammarket.get(ramcore_symbol.raw(), "ram market does not exist");
-      _rammarket.modify( market, same_payer, [&]( auto& es ) {
-         bytes_out = es.direct_convert( quant_after_fee,  ram_symbol ).amount;
-      });
-
-      check( bytes_out > 0, "must reserve a positive amount" );
-
-      _gstate.total_ram_bytes_reserved += uint64_t(bytes_out);
-      _gstate.total_ram_stake          += quant_after_fee.amount;
-
-      const int64_t ram_bytes = add_ram( receiver, bytes_out );
-
-      // logging
-      system_contract::logbuyram_action logbuyram_act{ get_self(), { {get_self(), active_permission} } };
-      system_contract::logsystemfee_action logsystemfee_act{ get_self(), { {get_self(), active_permission} } };
-
-      logbuyram_act.send( payer, receiver, quant, bytes_out, ram_bytes, fee );
-      logsystemfee_act.send( ram_account, fee, "buy ram" );
-
-      // action return value
-      return action_return_buyram{ payer, receiver, quant, bytes_out, ram_bytes, fee };
-   }
-
-   void system_contract::logbuyram( const name& payer, const name& receiver, const asset& quantity, int64_t bytes, int64_t ram_bytes, const asset& fee ) {
-      require_auth( get_self() );
-      require_recipient(payer);
-      require_recipient(receiver);
-   }
-
-  /**
-    *  The system contract now buys and sells RAM allocations at prevailing market prices.
-    *  This may result in traders buying RAM today in anticipation of potential shortages
-    *  tomorrow. Overall this will result in the market balancing the supply and demand
-    *  for RAM over time.
-    */
-   action_return_sellram system_contract::sellram( const name& account, int64_t bytes ) {
-      require_auth( account );
-      update_ram_supply();
-      require_recipient(account);
-      const int64_t ram_bytes = reduce_ram(account, bytes);
-
-      asset tokens_out;
-      auto itr = _rammarket.find(ramcore_symbol.raw());
-      _rammarket.modify( itr, same_payer, [&]( auto& es ) {
-         /// the cast to int64_t of bytes is safe because we certify bytes is <= quota which is limited by prior purchases
-         tokens_out = es.direct_convert( asset(bytes, ram_symbol), core_symbol());
-      });
-
-      check( tokens_out.amount > 1, "token amount received from selling ram is too low" );
-
-      _gstate.total_ram_bytes_reserved -= static_cast<decltype(_gstate.total_ram_bytes_reserved)>(bytes); // bytes > 0 is asserted above
-      _gstate.total_ram_stake          -= tokens_out.amount;
-
-      //// this shouldn't happen, but just in case it does we should prevent it
-      check( _gstate.total_ram_stake >= 0, "error, attempt to unstake more tokens than previously staked" );
-
-      {
-         token::transfer_action transfer_act{ token_account, { {ram_account, active_permission}, {account, active_permission} } };
-         transfer_act.send( ram_account, account, asset(tokens_out), "sell ram" );
-      }
-      const int64_t fee = ( tokens_out.amount + 199 ) / 200; /// .5% fee (round up)
-      // since tokens_out.amount was asserted to be at least 2 earlier, fee.amount < tokens_out.amount
-      if ( fee > 0 ) {
-         token::transfer_action transfer_act{ token_account, { {account, active_permission} } };
-         transfer_act.send( account, ramfee_account, asset(fee, core_symbol()), "sell ram fee" );
-         channel_to_system_fees( ramfee_account, asset(fee, core_symbol() ));
-      }
-
-      // logging
-      system_contract::logsellram_action logsellram_act{ get_self(), { {get_self(), active_permission} } };
-      system_contract::logsystemfee_action logsystemfee_act{ get_self(), { {get_self(), active_permission} } };
-
-      logsellram_act.send( account, tokens_out, bytes, ram_bytes, asset(fee, core_symbol() ) );
-      logsystemfee_act.send( ram_account, asset(fee, core_symbol() ), "sell ram" );
-
-      // action return value
-      return action_return_sellram{ account, tokens_out, bytes, ram_bytes, asset(fee, core_symbol() ) };
-   }
-
-   void system_contract::logsellram( const name& account, const asset& quantity, int64_t bytes, int64_t ram_bytes, const asset& fee ) {
-      require_auth( get_self() );
-      require_recipient(account);
-   }
-
-   /**
-    * This action will transfer RAM bytes from one account to another.
-    */
-   action_return_ramtransfer system_contract::ramtransfer( const name& from, const name& to, int64_t bytes, const std::string& memo ) {
-      require_auth( from );
-      update_ram_supply();
-      check( memo.size() <= 256, "memo has more than 256 bytes" );
-      const int64_t from_ram_bytes = reduce_ram( from, bytes );
-      const int64_t to_ram_bytes = add_ram( to, bytes );
-      require_recipient( from );
-      require_recipient( to );
-
-      // action return value
-      return action_return_ramtransfer{ from, to, bytes, from_ram_bytes, to_ram_bytes };
-   }
-
-   /**
-    * This action will burn RAM bytes from owner account.
-    */
-   action_return_ramtransfer system_contract::ramburn( const name& owner, int64_t bytes, const std::string& memo ) {
-      require_auth( owner );
-      return ramtransfer( owner, null_account, bytes, memo );
-   }
-
-   /**
-    * This action will buy and then burn the purchased RAM bytes.
-    */
-   action_return_buyram system_contract::buyramburn( const name& payer, const asset& quantity, const std::string& memo ) {
-      require_auth( payer );
-      check( quantity.symbol == core_symbol(), "quantity must be core token" );
-      check( quantity.amount > 0, "quantity must be positive" );
-
-      const auto return_buyram = buyram( payer, payer, quantity );
-      ramburn( payer, return_buyram.bytes_purchased, memo );
-
-      return return_buyram;
-   }
-
-   [[eosio::action]]
-   void system_contract::logramchange( const name& owner, int64_t bytes, int64_t ram_bytes )
-   {
-      require_auth( get_self() );
-      require_recipient( owner );
-   }
-
-   int64_t system_contract::reduce_ram( const name& owner, int64_t bytes ) {
-      check( bytes > 0, "cannot reduce negative byte" );
-      user_resources_table userres( get_self(), owner.value );
-      auto res_itr = userres.find( owner.value );
-      check( res_itr != userres.end(), "no resource row" );
-      check( res_itr->ram_bytes >= bytes, "insufficient quota" );
-
-      userres.modify( res_itr, same_payer, [&]( auto& res ) {
-          res.ram_bytes -= bytes;
-      });
-      set_resource_ram_bytes_limits( owner );
-
-      // logging
-      system_contract::logramchange_action logramchange_act{ get_self(), { {get_self(), active_permission} }};
-      logramchange_act.send( owner, -bytes, res_itr->ram_bytes );
-      return res_itr->ram_bytes;
-   }
-
-   int64_t system_contract::add_ram( const name& owner, int64_t bytes ) {
-      check( bytes > 0, "cannot add negative byte" );
-      check( is_account(owner), "owner=" + owner.to_string() + " account does not exist");
-      user_resources_table userres( get_self(), owner.value );
-      auto res_itr = userres.find( owner.value );
-      if ( res_itr == userres.end() ) {
-         userres.emplace( owner, [&]( auto& res ) {
-            res.owner = owner;
-            res.net_weight = asset( 0, core_symbol() );
-            res.cpu_weight = asset( 0, core_symbol() );
-            res.ram_bytes = bytes;
-         });
-      } else {
-         userres.modify( res_itr, same_payer, [&]( auto& res ) {
-            res.ram_bytes += bytes;
-         });
-      }
-      set_resource_ram_bytes_limits( owner );
-
-      // logging
-      system_contract::logramchange_action logramchange_act{ get_self(), { {get_self(), active_permission} } };
-      logramchange_act.send( owner, bytes, res_itr->ram_bytes );
-      return res_itr->ram_bytes;
-   }
-
-   void system_contract::set_resource_ram_bytes_limits( const name& owner ) {
-      user_resources_table userres( get_self(), owner.value );
-      auto res_itr = userres.find( owner.value );
-
-      auto voter_itr = _voters.find( owner.value );
-      if ( voter_itr == _voters.end() || !has_field( voter_itr->flags1, voter_info::flags1_fields::ram_managed ) ) {
-         int64_t ram_bytes, net, cpu;
-         //get_resource_limits( owner, ram_bytes, net, cpu );
-         //set_resource_limits( owner, res_itr->ram_bytes + ram_gift_bytes, net, cpu );
-      }
+      eosio::set_resource_limits( receiver, reserved_gas, is_unlimited );
    }
 
    void system_contract::changebw( name from, const name& receiver,

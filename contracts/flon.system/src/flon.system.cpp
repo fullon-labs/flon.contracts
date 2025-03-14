@@ -64,51 +64,6 @@ namespace eosiosystem {
       _global4.set( _gstate4, get_self() );
    }
 
-   void system_contract::setram( uint64_t max_ram_size ) {
-      require_auth( get_self() );
-
-      check( _gstate.max_ram_size < max_ram_size, "ram may only be increased" ); /// decreasing ram might result market maker issues
-      check( max_ram_size < 1024ll*1024*1024*1024*1024, "ram size is unrealistic" );
-      check( max_ram_size > _gstate.total_ram_bytes_reserved, "attempt to set max below reserved" );
-
-      auto delta = int64_t(max_ram_size) - int64_t(_gstate.max_ram_size);
-      auto itr = _rammarket.find(ramcore_symbol.raw());
-
-      /**
-       *  Increase the amount of ram for sale based upon the change in max ram size.
-       */
-      _rammarket.modify( itr, same_payer, [&]( auto& m ) {
-         m.base.balance.amount += delta;
-      });
-
-      _gstate.max_ram_size = max_ram_size;
-   }
-
-   void system_contract::update_ram_supply() {
-      auto cbt = eosio::current_block_time();
-
-      if( cbt <= _gstate2.last_ram_increase ) return;
-
-      auto itr = _rammarket.find(ramcore_symbol.raw());
-      auto new_ram = (cbt.slot - _gstate2.last_ram_increase.slot)*_gstate2.new_ram_per_block;
-      _gstate.max_ram_size += new_ram;
-
-      /**
-       *  Increase the amount of ram for sale based upon the change in max ram size.
-       */
-      _rammarket.modify( itr, same_payer, [&]( auto& m ) {
-         m.base.balance.amount += new_ram;
-      });
-      _gstate2.last_ram_increase = cbt;
-   }
-
-   void system_contract::setramrate( uint16_t bytes_per_block ) {
-      require_auth( get_self() );
-
-      update_ram_supply();
-      _gstate2.new_ram_per_block = bytes_per_block;
-   }
-
    void system_contract::channel_to_system_fees( const name& from, const asset& amount ) {
       token::transfer_action transfer_act{ token_account, { from, active_permission } };
       transfer_act.send( from, fees_account, amount, "transfer from " + from.to_string() + " to " + fees_account.to_string() );
@@ -255,51 +210,6 @@ namespace eosiosystem {
       }
 
       // set_resource_limits( account, ram, net, cpu );
-   }
-
-   void system_contract::setacctram( const name& account, const std::optional<int64_t>& ram_bytes ) {
-      require_auth( get_self() );
-
-      // int64_t current_ram, current_net, current_cpu;
-      // get_resource_limits( account, current_ram, current_net, current_cpu );
-
-      int64_t ram = 0;
-
-      if( !ram_bytes ) {
-         auto vitr = _voters.find( account.value );
-         check( vitr != _voters.end() && has_field( vitr->flags1, voter_info::flags1_fields::ram_managed ),
-                "RAM of account is already unmanaged" );
-
-         user_resources_table userres( get_self(), account.value );
-         auto ritr = userres.find( account.value );
-
-         ram = ram_gift_bytes;
-         if( ritr != userres.end() ) {
-            ram += ritr->ram_bytes;
-         }
-
-         _voters.modify( vitr, same_payer, [&]( auto& v ) {
-            v.flags1 = set_field( v.flags1, voter_info::flags1_fields::ram_managed, false );
-         });
-      } else {
-         check( *ram_bytes >= 0, "not allowed to set RAM limit to unlimited" );
-
-         auto vitr = _voters.find( account.value );
-         if ( vitr != _voters.end() ) {
-            _voters.modify( vitr, same_payer, [&]( auto& v ) {
-               v.flags1 = set_field( v.flags1, voter_info::flags1_fields::ram_managed, true );
-            });
-         } else {
-            _voters.emplace( account, [&]( auto& v ) {
-               v.owner  = account;
-               v.flags1 = set_field( v.flags1, voter_info::flags1_fields::ram_managed, true );
-            });
-         }
-
-         ram = *ram_bytes;
-      }
-
-      // set_resource_limits( account, ram, current_net, current_cpu );
    }
 
    void system_contract::setacctnet( const name& account, const std::optional<int64_t>& net_weight ) {

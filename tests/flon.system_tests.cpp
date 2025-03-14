@@ -4154,12 +4154,6 @@ BOOST_FIXTURE_TEST_CASE( buy_pin_sell_ram, eosio_system_tester ) try {
                         )
    );
 
-   BOOST_REQUIRE_EQUAL( success(),
-                        push_action( "flon"_n, "setacctram"_n, mvo()
-                           ("account", "flon")
-                           ("ram_bytes", total_res["ram_bytes"].as_int64() )
-                        )
-   );
 
    auto eosio_original_balance = get_balance( "flon"_n );
 
