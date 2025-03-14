@@ -92,24 +92,6 @@ icon: @ICON_BASE_URL@/@ADMIN_ICON_URI@
 
 {{owner}} claims block and vote rewards from the system.
 
-<h1 class="contract">delegatebw</h1>
-
----
-spec_version: "0.2.0"
-title: Stake Tokens for NET and/or CPU
-summary: 'Stake tokens for NET and/or CPU and optionally transfer ownership'
-icon: @ICON_BASE_URL@/@RESOURCE_ICON_URI@
----
-
-{{#if transfer}} {{from}} stakes on behalf of {{receiver}} {{stake_net_quantity}} for NET bandwidth and {{stake_cpu_quantity}} for CPU bandwidth.
-
-Staked tokens will also be transferred to {{receiver}}. The sum of these two quantities will be deducted from {{from}}’s liquid balance and add to the vote weight of {{receiver}}.
-{{else}}
-{{from}} stakes to self and delegates to {{receiver}} {{stake_net_quantity}} for NET bandwidth and {{stake_cpu_quantity}} for CPU bandwidth.
-
-The sum of these two quantities add to the vote weight of {{from}}.
-{{/if}}
-
 <h1 class="contract">deleteauth</h1>
 
 ---
@@ -161,17 +143,6 @@ owner permission with authority:
 
 active permission with authority:
 {{to_json active}}
-
-<h1 class="contract">refund</h1>
-
----
-spec_version: "0.2.0"
-title: Claim Unstaked Tokens
-summary: 'Return previously unstaked tokens to {{nowrap owner}}'
-icon: @ICON_BASE_URL@/@ACCOUNT_ICON_URI@
----
-
-Return previously unstaked tokens to {{owner}} after the unstaking period has elapsed.
 
 <h1 class="contract">regproducer</h1>
 
@@ -246,40 +217,6 @@ icon: @ICON_BASE_URL@/@ACCOUNT_ICON_URI@
 ---
 
 Deploy the ABI file associated with the contract on account {{account}}.
-
-<h1 class="contract">setacctcpu</h1>
-
----
-spec_version: "0.2.0"
-title: Explicitly Manage the CPU Quota of Account
-summary: 'Explicitly manage the CPU bandwidth quota of account {{nowrap account}}'
-icon: @ICON_BASE_URL@/@ADMIN_ICON_URI@
----
-
-{{#if_has_value cpu_weight}}
-Explicitly manage the CPU bandwidth quota of account {{account}} by pinning it to a weight of {{cpu_weight}}.
-
-{{account}} can stake and unstake, however, it will not change their CPU bandwidth quota as long as it remains pinned.
-{{else}}
-Unpin the CPU bandwidth quota of account {{account}}. The CPU bandwidth quota of {{account}} will be driven by the current tokens staked for CPU bandwidth by {{account}}.
-{{/if_has_value}}
-
-<h1 class="contract">setacctnet</h1>
-
----
-spec_version: "0.2.0"
-title: Explicitly Manage the NET Quota of Account
-summary: 'Explicitly manage the NET bandwidth quota of account {{nowrap account}}'
-icon: @ICON_BASE_URL@/@ADMIN_ICON_URI@
----
-
-{{#if_has_value net_weight}}
-Explicitly manage the network bandwidth quota of account {{account}} by pinning it to a weight of {{net_weight}}.
-
-{{account}} can stake and unstake, however, it will not change their NET bandwidth quota as long as it remains pinned.
-{{else}}
-Unpin the NET bandwidth quota of account {{account}}. The NET bandwidth quota of {{account}} will be driven by the current tokens staked for NET bandwidth by {{account}}.
-{{/if_has_value}}
 
 <h1 class="contract">setalimits</h1>
 
@@ -358,19 +295,6 @@ icon: @ICON_BASE_URL@/@ADMIN_ICON_URI@
 
 * Fraction of inflation used to reward block producers: 10000/{{inflation_pay_factor}}
 * Fraction of block producer rewards to be distributed proportional to blocks produced: 10000/{{votepay_factor}}
-
-<h1 class="contract">undelegatebw</h1>
-
----
-spec_version: "0.2.0"
-title: Unstake Tokens for NET and/or CPU
-summary: 'Unstake tokens for NET and/or CPU from {{nowrap receiver}}'
-icon: @ICON_BASE_URL@/@RESOURCE_ICON_URI@
----
-
-{{from}} unstakes from {{receiver}} {{unstake_net_quantity}} for NET bandwidth and {{unstake_cpu_quantity}} for CPU bandwidth.
-
-The sum of these two quantities will be removed from the vote weight of {{receiver}} and will be made available to {{from}} after an uninterrupted 3 day period without further unstaking by {{from}}. After the uninterrupted 3 day period passes, the system will attempt to automatically return the funds to {{from}}’s regular token balance. However, this automatic refund may occasionally fail which will then require {{from}} to manually claim the funds with the refund action.
 
 <h1 class="contract">unlinkauth</h1>
 

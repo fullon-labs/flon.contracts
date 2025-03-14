@@ -468,47 +468,6 @@ namespace eosiosystem {
 
    typedef eosio::singleton< "global4"_n, eosio_global_state4 > global_state4_singleton;
 
-   struct [[eosio::table, eosio::contract("flon.system")]] user_resources {
-      name          owner;
-      asset         net_weight;
-      asset         cpu_weight;
-      int64_t       ram_bytes = 0;
-
-      bool is_empty()const { return net_weight.amount == 0 && cpu_weight.amount == 0 && ram_bytes == 0; }
-      uint64_t primary_key()const { return owner.value; }
-
-      // explicit serialization macro is not necessary, used here only to improve compilation time
-      EOSLIB_SERIALIZE( user_resources, (owner)(net_weight)(cpu_weight)(ram_bytes) )
-   };
-
-   // Every user 'from' has a scope/table that uses every recipient 'to' as the primary key.
-   struct [[eosio::table, eosio::contract("flon.system")]] delegated_bandwidth {
-      name          from;
-      name          to;
-      asset         net_weight;
-      asset         cpu_weight;
-
-      bool is_empty()const { return net_weight.amount == 0 && cpu_weight.amount == 0; }
-      uint64_t  primary_key()const { return to.value; }
-
-      // explicit serialization macro is not necessary, used here only to improve compilation time
-      EOSLIB_SERIALIZE( delegated_bandwidth, (from)(to)(net_weight)(cpu_weight) )
-
-   };
-
-   struct [[eosio::table, eosio::contract("flon.system")]] refund_request {
-      name            owner;
-      time_point_sec  request_time;
-      eosio::asset    net_amount;
-      eosio::asset    cpu_amount;
-
-      bool is_empty()const { return net_amount.amount == 0 && cpu_amount.amount == 0; }
-      uint64_t  primary_key()const { return owner.value; }
-
-      // explicit serialization macro is not necessary, used here only to improve compilation time
-      EOSLIB_SERIALIZE( refund_request, (owner)(request_time)(net_amount)(cpu_amount) )
-   };
-
    struct [[eosio::table, eosio::contract("flon.system")]] vote_refund {
       name            owner;
       time_point_sec  request_time;
@@ -520,10 +479,6 @@ namespace eosiosystem {
       EOSLIB_SERIALIZE( vote_refund, (owner)(request_time)(vote_staked) )
    };
 
-
-   typedef eosio::multi_index< "userres"_n, user_resources >      user_resources_table;
-   typedef eosio::multi_index< "delband"_n, delegated_bandwidth > del_bandwidth_table;
-   typedef eosio::multi_index< "refunds"_n, refund_request >      refunds_table;
    typedef eosio::multi_index< "voterefund"_n, vote_refund >      vote_refund_table;
 
    struct action_return_sellram {
@@ -664,25 +619,6 @@ namespace eosiosystem {
          void setalimits( const name& account, uint64_t gas, bool is_unlimited );
 
          /**
-          * Set account NET limits action, which sets the NET limits of an account
-          *
-          * @param account - name of the account whose resource limit to be set,
-          * @param net_weight - fractionally proportionate net limit of available resources based on (weight / total_weight_of_all_accounts).
-          */
-         [[eosio::action]]
-         void setacctnet( const name& account, const std::optional<int64_t>& net_weight );
-
-         /**
-          * Set account CPU limits action, which sets the CPU limits of an account
-          *
-          * @param account - name of the account whose resource limit to be set,
-          * @param cpu_weight - fractionally proportionate cpu limit of available resources based on (weight / total_weight_of_all_accounts).
-          */
-         [[eosio::action]]
-         void setacctcpu( const name& account, const std::optional<int64_t>& cpu_weight );
-
-
-         /**
           * The activate action, activates a protocol feature
           *
           * @param feature_digest - hash of the protocol feature to activate.
@@ -699,56 +635,6 @@ namespace eosiosystem {
           */
          [[eosio::action]]
          void logsystemfee( const name& protocol, const asset& fee, const std::string& memo );
-
-         // functions defined in delegate_bandwidth.cpp
-
-         /**
-          * Delegate bandwidth and/or cpu action. Stakes SYS from the balance of `from` for the benefit of `receiver`.
-          *
-          * @param from - the account to delegate bandwidth from, that is, the account holding
-          *    tokens to be staked,
-          * @param receiver - the account to delegate bandwidth to, that is, the account to
-          *    whose resources staked tokens are added
-          * @param stake_net_quantity - tokens staked for NET bandwidth,
-          * @param stake_cpu_quantity - tokens staked for CPU bandwidth,
-          * @param transfer - if true, ownership of staked tokens is transferred to `receiver`.
-          *
-          * @post All producers `from` account has voted for will have their votes updated immediately.
-          */
-         [[eosio::action]]
-         void delegatebw( const name& from, const name& receiver,
-                          const asset& stake_net_quantity, const asset& stake_cpu_quantity, bool transfer );
-
-         /**
-          * Undelegate bandwidth action, decreases the total tokens delegated by `from` to `receiver` and/or
-          * frees the memory associated with the delegation if there is nothing
-          * left to delegate.
-          * This will cause an immediate reduction in net/cpu bandwidth of the
-          * receiver.
-          * A transaction is scheduled to send the tokens back to `from` after
-          * the staking period has passed. If existing transaction is scheduled, it
-          * will be canceled and a new transaction issued that has the combined
-          * undelegated amount.
-          * The `from` account loses voting power as a result of this call and
-          * all producer tallies are updated.
-          *
-          * @param from - the account to undelegate bandwidth from, that is,
-          *    the account whose tokens will be unstaked,
-          * @param receiver - the account to undelegate bandwidth to, that is,
-          *    the account to whose benefit tokens have been staked,
-          * @param unstake_net_quantity - tokens to be unstaked from NET bandwidth,
-          * @param unstake_cpu_quantity - tokens to be unstaked from CPU bandwidth,
-          *
-          * @post Unstaked tokens are transferred to `from` liquid balance via a
-          *    deferred transaction with a delay of 3 days.
-          * @post If called during the delay period of a previous `undelegatebw`
-          *    action, pending action is canceled and timer is reset.
-          * @post All producers `from` account has voted for will have their votes updated immediately.
-          * @post Bandwidth and storage for the deferred transaction are billed to `from`.
-          */
-         [[eosio::action]]
-         void undelegatebw( const name& from, const name& receiver,
-                            const asset& unstake_net_quantity, const asset& unstake_cpu_quantity );
 
          /**
           * Buy gas action, increases receiver's gas quota in ELON of quant
@@ -770,16 +656,6 @@ namespace eosiosystem {
           */
          [[eosio::action]]
          void buygasself( const name& account, const asset& quant );
-
-         /**
-          * Refund action, this action is called after the delegation-period to claim all pending
-          * unstaked tokens belonging to owner.
-          *
-          * @param owner - the owner of the tokens claimed.
-          */
-         [[eosio::action]]
-         void refund( const name& owner );
-
 
          /**
           * Refund vote action, this action is called after the subvote-period to claim all pending
@@ -1179,12 +1055,8 @@ namespace eosiosystem {
          void limitauthchg( const name& account, const std::vector<name>& allow_perms, const std::vector<name>& disallow_perms );
 
          using init_action = eosio::action_wrapper<"init"_n, &system_contract::init>;
-         using setacctnet_action = eosio::action_wrapper<"setacctnet"_n, &system_contract::setacctnet>;
-         using setacctcpu_action = eosio::action_wrapper<"setacctcpu"_n, &system_contract::setacctcpu>;
          using activate_action = eosio::action_wrapper<"activate"_n, &system_contract::activate>;
          using logsystemfee_action = eosio::action_wrapper<"logsystemfee"_n, &system_contract::logsystemfee>;
-         using delegatebw_action = eosio::action_wrapper<"delegatebw"_n, &system_contract::delegatebw>;
-         using undelegatebw_action = eosio::action_wrapper<"undelegatebw"_n, &system_contract::undelegatebw>;
          using buygas_action = eosio::action_wrapper<"buygas"_n, &system_contract::buygas>;
          using regproducer_action = eosio::action_wrapper<"regproducer"_n, &system_contract::regproducer>;
          using regproducer2_action = eosio::action_wrapper<"regproducer2"_n, &system_contract::regproducer2>;
@@ -1221,13 +1093,6 @@ namespace eosiosystem {
          static eosio_global_state4 get_default_inflation_parameters();
          void channel_to_system_fees( const name& from, const asset& amount );
          bool execute_next_schedule();
-
-         // defined in delegate_bandwidth.cpp
-         void changebw( name from, const name& receiver,
-                        const asset& stake_net_quantity, const asset& stake_cpu_quantity, bool transfer );
-
-         void update_stake_delegated( const name from, const name receiver, const asset stake_net_delta, const asset stake_cpu_delta );
-         void update_user_resources( const name from, const name receiver, const asset stake_net_delta, const asset stake_cpu_delta );
 
          // defined in voting.cpp
          void register_producer( const name& producer, const eosio::block_signing_authority& producer_authority,

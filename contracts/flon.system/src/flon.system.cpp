@@ -207,94 +207,6 @@ namespace eosiosystem {
       eosio::set_resource_limits( account, gas, is_unlimited );
    }
 
-   void system_contract::setacctnet( const name& account, const std::optional<int64_t>& net_weight ) {
-      require_auth( get_self() );
-
-      // int64_t current_ram, current_net, current_cpu;
-      // get_resource_limits( account, current_ram, current_net, current_cpu );
-
-      int64_t net = 0;
-
-      if( !net_weight ) {
-         auto vitr = _voters.find( account.value );
-         check( vitr != _voters.end() && has_field( vitr->flags1, voter_info::flags1_fields::net_managed ),
-                "Network bandwidth of account is already unmanaged" );
-
-         user_resources_table userres( get_self(), account.value );
-         auto ritr = userres.find( account.value );
-
-         if( ritr != userres.end() ) {
-            net = ritr->net_weight.amount;
-         }
-
-         _voters.modify( vitr, same_payer, [&]( auto& v ) {
-            v.flags1 = set_field( v.flags1, voter_info::flags1_fields::net_managed, false );
-         });
-      } else {
-         check( *net_weight >= -1, "invalid value for net_weight" );
-
-         auto vitr = _voters.find( account.value );
-         if ( vitr != _voters.end() ) {
-            _voters.modify( vitr, same_payer, [&]( auto& v ) {
-               v.flags1 = set_field( v.flags1, voter_info::flags1_fields::net_managed, true );
-            });
-         } else {
-            _voters.emplace( account, [&]( auto& v ) {
-               v.owner  = account;
-               v.flags1 = set_field( v.flags1, voter_info::flags1_fields::net_managed, true );
-            });
-         }
-
-         net = *net_weight;
-      }
-
-      // set_resource_limits( account, current_ram, net, current_cpu );
-   }
-
-   void system_contract::setacctcpu( const name& account, const std::optional<int64_t>& cpu_weight ) {
-      require_auth( get_self() );
-
-      // int64_t current_ram, current_net, current_cpu;
-      // get_resource_limits( account, current_ram, current_net, current_cpu );
-
-      int64_t cpu = 0;
-
-      if( !cpu_weight ) {
-         auto vitr = _voters.find( account.value );
-         check( vitr != _voters.end() && has_field( vitr->flags1, voter_info::flags1_fields::cpu_managed ),
-                "CPU bandwidth of account is already unmanaged" );
-
-         user_resources_table userres( get_self(), account.value );
-         auto ritr = userres.find( account.value );
-
-         if( ritr != userres.end() ) {
-            cpu = ritr->cpu_weight.amount;
-         }
-
-         _voters.modify( vitr, same_payer, [&]( auto& v ) {
-            v.flags1 = set_field( v.flags1, voter_info::flags1_fields::cpu_managed, false );
-         });
-      } else {
-         check( *cpu_weight >= -1, "invalid value for cpu_weight" );
-
-         auto vitr = _voters.find( account.value );
-         if ( vitr != _voters.end() ) {
-            _voters.modify( vitr, same_payer, [&]( auto& v ) {
-               v.flags1 = set_field( v.flags1, voter_info::flags1_fields::cpu_managed, true );
-            });
-         } else {
-            _voters.emplace( account, [&]( auto& v ) {
-               v.owner  = account;
-               v.flags1 = set_field( v.flags1, voter_info::flags1_fields::cpu_managed, true );
-            });
-         }
-
-         cpu = *cpu_weight;
-      }
-
-      // set_resource_limits( account, current_ram, current_net, cpu );
-   }
-
    void system_contract::activate( const eosio::checksum256& feature_digest ) {
       require_auth( get_self() );
       preactivate_feature( feature_digest );
@@ -435,13 +347,8 @@ namespace eosiosystem {
          }
       }
 
-      user_resources_table  userres( get_self(), new_account_name.value );
-
-      userres.emplace( new_account_name, [&]( auto& res ) {
-        res.owner = new_account_name;
-        res.net_weight = asset( 0, system_contract::get_core_symbol(get_self()) );
-        res.cpu_weight = asset( 0, system_contract::get_core_symbol(get_self()) );
-      });
+      // TODO: new user table
+      // user_resources_table  userres( get_self(), new_account_name.value );
 
       // set_resource_limits( new_account_name, 0, 0, 0 );
    }
