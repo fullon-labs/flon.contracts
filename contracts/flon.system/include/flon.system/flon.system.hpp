@@ -528,7 +528,6 @@ namespace eosiosystem {
          eosio_global_state3      _gstate3;
          eosio_global_state4      _gstate4;
          schedules_table          _schedules;
-         rammarket                _rammarket;
 
       public:
          static constexpr eosio::name active_permission{"active"_n};

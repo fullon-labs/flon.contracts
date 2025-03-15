@@ -35,7 +35,7 @@ namespace eosiosystem {
    {
       require_auth( payer );
 
-      check( quant.symbol == core_symbol(), "must buy gas with core token" );
+      check( quant.symbol == core_symbol(), "must buy gas with core asset" );
       check( quant.amount > 0, "must purchase a positive amount" );
       check( is_account(receiver), "receiver account not exists" );
       // TODO: limit the max quant?

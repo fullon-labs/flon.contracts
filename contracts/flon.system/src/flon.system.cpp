@@ -29,8 +29,7 @@ namespace eosiosystem {
     _global2(get_self(), get_self().value),
     _global3(get_self(), get_self().value),
     _global4(get_self(), get_self().value),
-    _schedules(get_self(), get_self().value),
-    _rammarket(get_self(), get_self().value)
+    _schedules(get_self(), get_self().value)
    {
       _gstate  = _global.exists() ? _global.get() : get_default_parameters();
       _gstate2 = _global2.exists() ? _global2.get() : eosio_global_state2{};
@@ -375,8 +374,6 @@ namespace eosiosystem {
       check( version.value == 0, "unsupported version for init action" );
 
       check( !_gstate.total_vote_stake.symbol.is_valid(), "system contract has already been initialized" );
-      auto itr = _rammarket.find(ramcore_symbol.raw());
-      check( itr == _rammarket.end(), "system contract has already been initialized" );
 
       _gstate.total_vote_stake.symbol = core;
       _gstate.initial_rewards_per_block.symbol = core;
@@ -387,14 +384,6 @@ namespace eosiosystem {
       check( system_token_supply.symbol == core, "specified core symbol does not exist (precision mismatch)" );
 
       check( system_token_supply.amount > 0, "system token supply must be greater than 0" );
-      _rammarket.emplace( get_self(), [&]( auto& m ) {
-         m.supply.amount = 100000000000000ll;
-         m.supply.symbol = ramcore_symbol;
-         m.base.balance.amount = int64_t(_gstate.free_ram());
-         m.base.balance.symbol = ram_symbol;
-         m.quote.balance.amount = system_token_supply.amount / 1000;
-         m.quote.balance.symbol = core;
-      });
 
       flon::flon_reward::init_action init_act{ reward_account, { {get_self(), active_permission} } };
       init_act.send( core );
