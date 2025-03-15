@@ -382,8 +382,13 @@ namespace eosiosystem {
 
       auto system_token_supply   = eosio::token::get_supply(token_account, core.code() );
       check( system_token_supply.symbol == core, "specified core symbol does not exist (precision mismatch)" );
-
       check( system_token_supply.amount > 0, "system token supply must be greater than 0" );
+
+      // init gas account' core asset in token contract here,
+      // so that gas fees can be deducted automatically for resource usage in native of chain
+      check( is_account(token_account), "gas account does not exist");
+      token::open_action open_act{ token_account, { {get_self(), active_permission} } };
+      open_act.send( gas_account, core, get_self() );
 
       flon::flon_reward::init_action init_act{ reward_account, { {get_self(), active_permission} } };
       init_act.send( core );
