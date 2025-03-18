@@ -35,6 +35,7 @@ namespace eosiosystem {
    {
       require_auth( payer );
 
+      // core_symbol() will check system contract is_init()
       check( quant.symbol == core_symbol(), "must buy gas with core asset" );
       check( quant.amount > 0, "must purchase a positive amount" );
       check( is_account(receiver), "receiver account not exists" );

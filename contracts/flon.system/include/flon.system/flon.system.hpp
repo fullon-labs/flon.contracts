@@ -560,6 +560,11 @@ namespace eosiosystem {
             return sym;
          }
 
+         inline static bool is_init(const name& self) {
+            global_state_singleton   global(self, self.value);
+            return global.exists() && global.get().total_vote_stake.symbol.is_valid();
+         }
+
          // Actions:
          /**
           * The Init action initializes the system contract for a version and a symbol.
@@ -1086,6 +1091,15 @@ namespace eosiosystem {
             check(core_symbol.is_valid(), "system contract must first be initialized");
             return core_symbol;
          }
+
+         inline bool is_init() const {
+            return _gstate.total_vote_stake.symbol.is_valid();
+         }
+
+         inline void check_init() const {
+            check(is_init(), "system contract must first be initialized");
+         }
+
 
          //defined in flon.system.cpp
          static eosio_global_state get_default_parameters();

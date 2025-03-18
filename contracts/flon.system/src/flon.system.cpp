@@ -202,7 +202,7 @@ namespace eosiosystem {
       bool is_unlimited_old = true;
       eosio::get_resource_limits( account, gas_old, is_unlimited_old );
 
-      check( gas != gas_old && is_unlimited != is_unlimited_old, "data does not have change");
+      check( gas != gas_old || is_unlimited != is_unlimited_old, "data does not have change");
       eosio::set_resource_limits( account, gas, is_unlimited );
    }
 
@@ -321,7 +321,9 @@ namespace eosiosystem {
    void native::newaccount( const name&       creator,
                             const name&       new_account_name,
                             ignore<authority> owner,
-                            ignore<authority> active ) {
+                            ignore<authority> active )
+   {
+      if (!system_contract::is_init(get_self())) return;
 
       if( creator != get_self() ) {
          uint64_t tmp = new_account_name.value >> 4;
