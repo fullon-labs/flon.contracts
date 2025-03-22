@@ -30,7 +30,7 @@ The quickest way to calculate the price of RAM:
 1. Run the following dune command: (**Note:** Make sure you run it against the mainnet or the testnet of your choice.)
 
     ```shell
-    dune -- focli get table eosio eosio rammarket
+    dune -- fucli get table eosio eosio rammarket
     ```
 
 2. Observe the output which should look like the sample below:
@@ -62,7 +62,7 @@ You can buy RAM through the dune command line interface tool. You can buy either
 For example, the command below buys for account `bob` 0.1 EOS worth of RAM at the current market RAM price. The cost for the RAM and the execution of this transaction is covered by the `alice` account and the transaction is authorized by the `active` key of the `alice` account.
 
 ```shell
-dune -- focli system buyram alice bob "0.1 EOS" -p alice@active
+dune -- fucli system buyram alice bob "0.1 EOS" -p alice@active
 ```
 
 ### Buy RAM In Bytes
@@ -70,7 +70,7 @@ dune -- focli system buyram alice bob "0.1 EOS" -p alice@active
 For example, the command below buys for account `bob` 1000 RAM bytes at the current market RAM price. The cost for the RAM and the execution of this transaction is covered by the `alice` account and the transaction is authorized by the `active` key of the `alice` account.
 
 ```shell
-dune -- focli system buyrambytes alice bob "1000" -p alice@active
+dune -- fucli system buyrambytes alice bob "1000" -p alice@active
 ```
 
 ## How Is RAM Calculated

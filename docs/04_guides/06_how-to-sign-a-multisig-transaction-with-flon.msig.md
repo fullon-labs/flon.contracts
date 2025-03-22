@@ -13,7 +13,7 @@ link_text: How to sign a multisig transaction with flon.msig
 
 ### One user creates a proposal:
 ```sh
-focli multisig propose test '[{"actor": "treasury", "permission": "active"}]' '[{"actor": "treasury", "permission": "active"}]' flon.token issue '{"to": "tester", "quantity": "1000.0000 EOS", "memo": ""}' -p tester
+fucli multisig propose test '[{"actor": "treasury", "permission": "active"}]' '[{"actor": "treasury", "permission": "active"}]' flon.token issue '{"to": "tester", "quantity": "1000.0000 EOS", "memo": ""}' -p tester
 ```
 ```console
 executed transaction: e26f3a3a7cba524a7b15a0b6c77c7daa73d3ba9bf84e83f9c2cdf27fcb183d61  336 bytes  107520 cycles
@@ -22,7 +22,7 @@ executed transaction: e26f3a3a7cba524a7b15a0b6c77c7daa73d3ba9bf84e83f9c2cdf27fcb
 
 ### Another user reviews the transaction:
 ```sh
-focli multisig review tester test
+fucli multisig review tester test
 ```
 ```json
 {
@@ -65,7 +65,7 @@ focli multisig review tester test
 
 ### And then approves it:
 ```sh
-focli multisig approve tester test '{"actor": "treasury", "permission": "active"}' -p treasury
+fucli multisig approve tester test '{"actor": "treasury", "permission": "active"}' -p treasury
 ```
 ```console
 executed transaction: 475970a4b0016368d0503d1ce01577376f91f5a5ba63dd4353683bd95101b88d  256 bytes  108544 cycles
@@ -74,7 +74,7 @@ executed transaction: 475970a4b0016368d0503d1ce01577376f91f5a5ba63dd4353683bd951
 
 ### First user initiates execution:
 ```sh
-focli multisig exec tester test -p tester
+fucli multisig exec tester test -p tester
 ```
 ```console
 executed transaction: 64e5eaceb77362694055f572ae35876111e87b637a55250de315b1b55e56d6c2  248 bytes  109568 cycles
@@ -92,7 +92,7 @@ executed transaction: 64e5eaceb77362694055f572ae35876111e87b637a55250de315b1b55e
 
 ### One user creates a proposal:
 ```sh
-focli multisig propose test '[{"actor": "treasury", "permission": "active"}]' '[{"actor": "treasury", "permission": "active"}]' flon.token transfer '{"from": "treasury", "to": "tester", "quantity": "1.0000 EOS", "memo": ""}' -p tester
+fucli multisig propose test '[{"actor": "treasury", "permission": "active"}]' '[{"actor": "treasury", "permission": "active"}]' flon.token transfer '{"from": "treasury", "to": "tester", "quantity": "1.0000 EOS", "memo": ""}' -p tester
 ```
 ```console
 executed transaction: e26f3a3a7cba524a7b15a0b6c77c7daa73d3ba9bf84e83f9c2cdf27fcb183d61  336 bytes  107520 cycles
@@ -101,7 +101,7 @@ executed transaction: e26f3a3a7cba524a7b15a0b6c77c7daa73d3ba9bf84e83f9c2cdf27fcb
 
 ### Another user reviews the transaction:
 ```sh
-focli multisig review tester test
+fucli multisig review tester test
 ```
 ```json
 {
@@ -145,7 +145,7 @@ focli multisig review tester test
 
 ### And then approves it:
 ```sh
-focli multisig approve tester test '{"actor": "treasury", "permission": "active"}' -p treasury
+fucli multisig approve tester test '{"actor": "treasury", "permission": "active"}' -p treasury
 ```
 ```console
 executed transaction: 475970a4b0016368d0503d1ce01577376f91f5a5ba63dd4353683bd95101b88d  256 bytes  108544 cycles
@@ -154,7 +154,7 @@ executed transaction: 475970a4b0016368d0503d1ce01577376f91f5a5ba63dd4353683bd951
 
 ### First user check account balance before executing the proposed transaction
 ```sh
-focli get account tester
+fucli get account tester
 ```
 ```console
 ...
@@ -167,7 +167,7 @@ EOS balances:
 
 ### First user initiates execution of proposed transaction:
 ```sh
-focli multisig exec tester test -p tester
+fucli multisig exec tester test -p tester
 ```
 ```console
 executed transaction: 64e5eaceb77362694055f572ae35876111e87b637a55250de315b1b55e56d6c2  248 bytes  109568 cycles
@@ -176,7 +176,7 @@ executed transaction: 64e5eaceb77362694055f572ae35876111e87b637a55250de315b1b55e
 
 ### First user can check account balance, it should be increased by 1.0000 EOS
 ```sh
-focli get account tester
+fucli get account tester
 ```
 ```console
 ...

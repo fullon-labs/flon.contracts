@@ -27,7 +27,7 @@ cd eos-system-contracts/contracts/flon.token
 | You may have to unlock your wallet first!
 
 ```shell
-focli create account flon flon.token EOS6MRyAjQq8ud7hVNYcfnVPJqcVpscN5So8BhtHuGYqET5GDW5CV
+fucli create account flon flon.token EOS6MRyAjQq8ud7hVNYcfnVPJqcVpscN5So8BhtHuGYqET5GDW5CV
 ```
 
 ## Step 3: Compile the Contract
@@ -40,7 +40,7 @@ flon-cpp -I include -o flon.token.wasm src/flon.token.cpp --abigen
 
 ```shell
 
-focli set contract flon.token CONTRACTS_DIR/eos-system-contracts/contracts/flon.token --abi flon.token.abi -p flon.token@active
+fucli set contract flon.token CONTRACTS_DIR/eos-system-contracts/contracts/flon.token --abi flon.token.abi -p flon.token@active
 ```
 
 Result should look similar to the one below:
@@ -57,7 +57,7 @@ warning: transaction executed locally, but may not be confirmed by the network y
 ## Step 5: Create the Token
 
 ```shell
-focli push action flon.token create '[ "flon", "1000000000.0000 NEWT"]' -p flon.token@active
+fucli push action flon.token create '[ "flon", "1000000000.0000 NEWT"]' -p flon.token@active
 ```
 
 Result should look similar to the one below:
@@ -70,7 +70,7 @@ executed transaction: 0e49a421f6e75f4c5e09dd738a02d3f51bd18a0cf31894f68d335cd70d
 An alternate approach uses named arguments:
 
 ```shell
-focli push action flon.token create '{"issuer":"flon", "maximum_supply":"1000000000.0000 NEWT"}' -p flon.token@active
+fucli push action flon.token create '{"issuer":"flon", "maximum_supply":"1000000000.0000 NEWT"}' -p flon.token@active
 ```
 
 Result should look similar to the one below:
@@ -87,7 +87,7 @@ This command created a new token `NEWT` with a precision of 4 decimals and a max
 The issuer can issue new tokens to the issuer account in our case `flon`.
 
 ```sh
-focli push action flon.token issue '[ "flon", "100.0000 NEWT", "memo" ]' -p flon@active
+fucli push action flon.token issue '[ "flon", "100.0000 NEWT", "memo" ]' -p flon@active
 ```
 
 Result should look similar to the one below:
@@ -103,7 +103,7 @@ warning: transaction executed locally, but may not be confirmed by the network y
 Now that account `flon` has been issued tokens, transfer some of them to account `bob`.
 
 ```shell
-focli push action flon.token transfer '[ "flon", "bob", "25.0000 NEWT", "m" ]' -p flon@active
+fucli push action flon.token transfer '[ "flon", "bob", "25.0000 NEWT", "m" ]' -p flon@active
 ```
 
 Result should look similar to the one below:
@@ -116,10 +116,10 @@ executed transaction: 60d334850151cb95c35fe31ce2e8b536b51441c5fd4c3f2fea98edcc6d
 warning: transaction executed locally, but may not be confirmed by the network yet         ]
 ```
 
-Now check if "bob" got the tokens using [focli get currency balance](https://github.com/fullon-labs/fullon/blob/main/docs/02_cleos/03_command-reference/get/currency-balance.md)
+Now check if "bob" got the tokens using [fucli get currency balance](https://github.com/fullon-labs/fullon/blob/main/docs/02_cleos/03_command-reference/get/currency-balance.md)
 
 ```shell
-focli get currency balance flon.token bob NEWT
+fucli get currency balance flon.token bob NEWT
 ```
 
 Result:
@@ -131,7 +131,7 @@ Result:
 Check "flon's" balance, notice that tokens were deducted from the account
 
 ```shell
-focli get currency balance flon.token flon NEWT
+fucli get currency balance flon.token flon NEWT
 ```
 
 Result:

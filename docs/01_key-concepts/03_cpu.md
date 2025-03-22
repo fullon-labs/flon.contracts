@@ -2,14 +2,14 @@
 title: CPU as system resource
 ---
 
-As NET and RAM, the CPU resource is a very important system resource in the EOS blockchain. The CPU system resource provides processing power to blockchain accounts. When the blockchain executes a transaction, it consumes CPU and NET. For transactions to complete, sufficient CPU must be allocated to the payer account. The amount of CPU an account has is measured in microseconds and it is referred to as `cpu bandwidth` on the `dune -- focli get account` command output.
+As NET and RAM, the CPU resource is a very important system resource in the EOS blockchain. The CPU system resource provides processing power to blockchain accounts. When the blockchain executes a transaction, it consumes CPU and NET. For transactions to complete, sufficient CPU must be allocated to the payer account. The amount of CPU an account has is measured in microseconds and it is referred to as `cpu bandwidth` on the `dune -- fucli get account` command output.
 
 ## How Is CPU Calculated
 
 Transactions executed by the blockchain contain one or more actions. Each transaction must consume an amount of CPU within the limits predefined by the minimum and maximum transaction CPU usage values. For EOS blockchain these limits are set in the blockchain's configuration. You can find out these limits by running the following command and consult the `min_transaction_cpu_usage` and the `max_transaction_cpu_usage` which are expressed in microseconds:
 
 ```shell
-dune -- focli get consensus_parameters
+dune -- fucli get consensus_parameters
 ```
 
 For accounts that execute transactions, the blockchain calculates and updates the remaining resources with each block before each transaction is executed. When a transaction is prepared for execution, the blockchain determines whether the payer account has enough CPU to cover the transaction execution. To calculate the necessary CPU, the node that actively builds the current block measures the time to execute the transaction. If the account has enough CPU, the transaction is executed; otherwise it is rejected. For technical details please refer to the following links:

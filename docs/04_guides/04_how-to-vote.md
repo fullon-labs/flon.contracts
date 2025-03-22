@@ -9,7 +9,7 @@ Vote for a block producer
 
 ## Before you begin
 
-* Install the current supported version of focli
+* Install the current supported version of fucli
 
 * Ensure the reference system contracts from `eos-system-contracts` repository is deployed and used to manage system resources
 
@@ -24,7 +24,7 @@ Vote for a block producer
 Assume you are going to vote for blockproducer1 and blockproducer2 from an account called `eosiotestts2`, execute the following:
 
 ```bash
-focli system voteproducer prods eosiotestts2 blockproducer1 blockproducer2
+fucli system voteproducer prods eosiotestts2 blockproducer1 blockproducer2
 ```
 
 You should see something like below:

@@ -15,7 +15,7 @@ Setup an account that require multiple signatures for signing a transaction
 
 * You have sufficient token allocated to your account
 
-* Install the currently supported version of focli
+* Install the currently supported version of fucli
 
 * Unlock your wallet
 
@@ -24,5 +24,5 @@ Setup an account that require multiple signatures for signing a transaction
 Buys RAM in value of 10 EOS tokens for account `alice`:
 
 ```shell
-focli system buyram alice alice "10 EOS" -p alice@active
+fucli system buyram alice alice "10 EOS" -p alice@active
 ```

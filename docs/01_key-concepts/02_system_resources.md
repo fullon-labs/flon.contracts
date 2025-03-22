@@ -14,7 +14,7 @@ To allocate RAM resources to an account you have to [purchase RAM](./05_ram.md#h
 
 As a developer if you want to estimate how much CPU and NET a transaction requires for execution, you can employ one of the following methods:
 
-* Use the `--dry-run` option for the `dune -- focli push transaction` command.
+* Use the `--dry-run` option for the `dune -- fucli push transaction` command.
 * Use any tool that can pack a transaction and send it to the blockchain and specify the `--dry-run` option.
 * Use the chain API endpoint [`compute_transaction`](https://github.com/fullon-labs/fullon/blob/main/plugins/chain_plugin/include/eosio/chain_plugin/chain_plugin.hpp#L557).
 
