@@ -481,22 +481,6 @@ namespace eosiosystem {
 
    typedef eosio::multi_index< "voterefund"_n, vote_refund >      vote_refund_table;
 
-   struct action_return_sellram {
-      name account;
-      asset quantity;
-      int64_t bytes_sold;
-      int64_t ram_bytes;
-      asset fee;
-   };
-
-   struct action_return_ramtransfer {
-      name from;
-      name to;
-      int64_t bytes;
-      int64_t from_ram_bytes;
-      int64_t to_ram_bytes;
-   };
-
    /**
     * The `flon.system` smart contract is provided by `block.one` as a sample system contract, and it defines the structures and actions needed for blockchain's core functionality.
     *
