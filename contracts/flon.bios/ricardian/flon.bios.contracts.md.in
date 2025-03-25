@@ -103,7 +103,7 @@ summary: 'Adjust resource limits of account {{nowrap account}}'
 icon: @ICON_BASE_URL@/@ADMIN_ICON_URI@
 ---
 
-{{$action.account}} updates {{account}}’s resource limits to have a RAM quota of {{ram_bytes}} bytes, a NET bandwidth quota of {{net_weight}} and a CPU bandwidth quota of {{cpu_weight}}.
+{{$action.account}} updates {{account}}’s resource limits to have a GAS quota, and whether the account has unlimited resources.
 
 <h1 class="contract">setcode</h1>
 
