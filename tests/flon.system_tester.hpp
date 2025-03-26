@@ -268,7 +268,7 @@ public:
       // ABI for our return struct
       const char* ramtransfer_return_abi = R"=====(
    {
-      "version": "eosio::abi/1.2",
+      "version": "flon::abi/1.2",
       "types": [],
       "structs": [
          {
