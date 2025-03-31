@@ -7,6 +7,7 @@
 #include <eosio/privileged.hpp>
 #include <eosio/instant_finality.hpp>
 #include <eosio/producer_schedule.hpp>
+#include <contract_version.hpp>
 
 namespace eosiobios {
 
@@ -107,6 +108,9 @@ namespace eosiobios {
    class [[eosio::contract("flon.bios")]] bios : public eosio::contract {
       public:
          using contract::contract;
+
+         DEFINE_VERSION_ACTION(bios)
+
          /**
           * New account action, called after a new account is created. This code enforces resource-limits rules
           * for new accounts as well as new account naming conventions.

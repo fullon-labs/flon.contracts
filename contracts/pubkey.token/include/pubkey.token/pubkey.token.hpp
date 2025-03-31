@@ -6,6 +6,7 @@
 #include <wasm_db.hpp>
 #include "pubkey.token/flon.token.hpp"
 #include "pubkey.token/pubkey.token.db.hpp"
+#include <contract_version.hpp>
 
 namespace flon {
 
@@ -15,7 +16,7 @@ using namespace wasm::db;
 
 /**
  * The `pubkey.token` is Cross-chain (X -> flon -> Y) contract
- * 
+ *
  */
 
 #define TRANSFER(bank, from, to, quantity, memo) \
@@ -34,10 +35,10 @@ public:
    using contract::contract;
 
    pubkey_token(eosio::name receiver, eosio::name code, datastream<const char*> ds):
-        _db(_self), contract(receiver, code, ds), 
+        _db(_self), contract(receiver, code, ds),
         _tbl_pubkey_accts(get_self(), get_self().value),
         _global(_self, _self.value){
-            
+
         if (_global.exists()) {
             _gstate = _global.get();
 
@@ -47,15 +48,17 @@ public:
         }
     }
 
-    ~pubkey_token() { 
+    ~pubkey_token() {
         _global.set( _gstate, get_self() );
     }
+
+    DEFINE_VERSION_ACTION(pubkey_token)
 
     // user -> pubkey.token, memo: $pubkey
     [[eosio::on_notify("*::transfer")]]
     void ontransfer( name from, name to, asset quantity, string memo );
-    
-    
+
+
     /**
      * @usage: create a new account, signed & submitted by a proxy miner
      * @params:
@@ -65,8 +68,8 @@ public:
 
     /**
      * usage: signed & submitted by proxy miner
-     * params: 
-     * 
+     * params:
+     *
      * sig: sign last_recv_at + to_acct string
      **/
     ACTION move(const name& miner, const eosio::public_key& pubkey, const time_point& last_recv_at, const name& to_acct, const eosio::signature& sig);

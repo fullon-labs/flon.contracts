@@ -1,0 +1,5 @@
+#define CONTRACT_VERSION "@VERSION_FULL@"
+
+#define DEFINE_VERSION_ACTION(T) \
+    [[eosio::action]] std::string version() { return CONTRACT_VERSION; } \
+    using version_action = eosio::action_wrapper<"close"_n, &T::version>;

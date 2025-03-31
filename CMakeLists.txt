@@ -13,6 +13,17 @@ else()
   set(VERSION_FULL "${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_PATCH}")
 endif()
 
+
+message(STATUS "Updating version metadata, VERSION_FULL=${VERSION_FULL}")
+add_custom_target(
+   update_version ALL
+   COMMAND ${CMAKE_COMMAND} -DVERSION_FULL=${VERSION_FULL}
+                              -DSRC_VERION_FILE=${CMAKE_SOURCE_DIR}/version/contract_version.hpp.in
+                              -DDEST_VERION_FILE=${CMAKE_BINARY_DIR}/version/contract_version.hpp
+                              -P ${CMAKE_SOURCE_DIR}/version/VersionUtils.cmake
+   COMMENT "Updating version metadata..." VERBATIM )
+set(CONTRACT_VERSION_FILE ${CMAKE_BINARY_DIR}/version/ContractVersion.cmake)
+
 message(STATUS "Building eos-system-contracts v${VERSION_FULL}")
 
 include(ExternalProject)
@@ -45,6 +56,7 @@ ExternalProject_Add(
              -DCMAKE_INSTALL_PREFIX:PATH=<INSTALL_DIR>
              -DBUILD_TESTS=${BUILD_TESTS}
              -DSYSTEM_ENABLE_CDT_VERSION_CHECK=${SYSTEM_ENABLE_CDT_VERSION_CHECK}
+             -DCONTRACT_VERSION_DIR=${CMAKE_BINARY_DIR}/version
   UPDATE_COMMAND ""
   PATCH_COMMAND ""
   TEST_COMMAND ""

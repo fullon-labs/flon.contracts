@@ -11,6 +11,7 @@
 
 #include <flon.system/exchange_state.hpp>
 #include <flon.system/native.hpp>
+#include <contract_version.hpp>
 
 #include <deque>
 #include <optional>
@@ -548,6 +549,8 @@ namespace eosiosystem {
             global_state_singleton   global(self, self.value);
             return global.exists() && global.get().total_vote_stake.symbol.is_valid();
          }
+
+         DEFINE_VERSION_ACTION(system_contract)
 
          // Actions:
          /**
