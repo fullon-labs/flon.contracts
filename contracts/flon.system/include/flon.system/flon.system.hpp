@@ -522,7 +522,6 @@ namespace eosiosystem {
          static constexpr eosio::name stake_account         = {"flon.stake"_n};
          static constexpr eosio::name vote_account          = {"flon.vote"_n};
          static constexpr eosio::name reward_account        = {"flon.reward"_n};
-         static constexpr eosio::name bpay_account          = {"flon.bpay"_n};
          static constexpr eosio::name vpay_account          = {"flon.vpay"_n};
          static constexpr eosio::name names_account         = {"flon.names"_n};
          static constexpr eosio::name saving_account        = {"flon.saving"_n};

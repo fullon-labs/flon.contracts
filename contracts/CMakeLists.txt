@@ -52,7 +52,6 @@ add_subdirectory(flon.msig)
 add_subdirectory(flon.system)
 add_subdirectory(flon.token)
 add_subdirectory(flon.wrap)
-# add_subdirectory(flon.bpay)
 add_subdirectory(flon.reward)
 add_subdirectory(pubkey.token)
 

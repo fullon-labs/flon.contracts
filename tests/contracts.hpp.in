@@ -14,10 +14,6 @@ struct contracts {
    static std::vector<char>    wrap_abi() { return read_abi("${CMAKE_BINARY_DIR}/contracts/flon.wrap/flon.wrap.abi"); }
    static std::vector<uint8_t> bios_wasm() { return read_wasm("${CMAKE_BINARY_DIR}/contracts/flon.bios/flon.bios.wasm"); }
    static std::vector<char>    bios_abi() { return read_abi("${CMAKE_BINARY_DIR}/contracts/flon.bios/flon.bios.abi"); }
-   #ifdef ENABLE_BPAY
-   static std::vector<uint8_t> bpay_wasm() { return read_wasm("${CMAKE_BINARY_DIR}/contracts/flon.bpay/flon.bpay.wasm"); }
-   static std::vector<char>    bpay_abi() { return read_abi("${CMAKE_BINARY_DIR}/contracts/flon.bpay/flon.bpay.abi"); }
-   #endif//ENABLE_BPAY
    static std::vector<uint8_t> boot_wasm() { return read_wasm("${CMAKE_BINARY_DIR}/contracts/flon.boot/flon.boot.wasm"); }
    static std::vector<char>    boot_abi() { return read_abi("${CMAKE_BINARY_DIR}/contracts/flon.boot/flon.boot.abi"); }
    static std::vector<uint8_t> reward_wasm() { return read_wasm("${CMAKE_BINARY_DIR}/contracts/flon.reward/flon.reward.wasm"); }

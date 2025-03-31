@@ -15,7 +15,6 @@ As you just learned the relation between a `system account` and a `system contra
 |flon.wrap|Yes|It contains the `flon.wrap` contract.|Simplifies block producer superuser actions by making them more readable and easier to audit.|
 |flon.token|No|It contains the `flon.token` contract.|Defines the structures and actions allowing users to create, issue, and manage tokens on the EOS blockchain.|
 |flon.names|No|No|The account which is holding funds from namespace auctions.|
-|flon.bpay|No|No|The account that pays the block producers for producing blocks. It assigns 0.25% of the inflation based on the amount of blocks a block producer created in the last 24 hours.|
 |flon.prods|No|No|The account representing the union of all current active block producers permissions.|
 |flon.ram|No|No|The account that keeps track of the EOS balances based on users actions of buying or selling RAM.|
 |flon.ramfee|No|No|The account that keeps track of the fees collected from users RAM trading actions: 0.5% from the value of each trade goes into this account.|

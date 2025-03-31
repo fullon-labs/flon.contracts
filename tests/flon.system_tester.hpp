@@ -50,7 +50,7 @@ public:
       produce_block();
 
       create_accounts({ "flon.token"_n, "flon.ram"_n, "flon.ramfee"_n, "flon.stake"_n,
-               "flon.bpay"_n, "flon.vpay"_n, "flon.saving"_n, "flon.names"_n, "flon.fees"_n,
+               "flon.vpay"_n, "flon.saving"_n, "flon.names"_n, "flon.fees"_n,
                "flon.reward"_n, "flon.vote"_n });
 
 
@@ -64,17 +64,6 @@ public:
          BOOST_REQUIRE_EQUAL(abi_serializer::to_abi(accnt.abi, abi), true);
          token_abi_ser.set_abi(abi, abi_serializer::create_yield_function(abi_serializer_max_time));
       }
-
-      #ifdef ENABLE_BPAY
-      set_code( "flon.bpay"_n, contracts::bpay_wasm());
-      set_abi( "flon.bpay"_n, contracts::bpay_abi().data() );
-      {
-         const auto& accnt = control->db().get<account_object,by_name>( "flon.bpay"_n );
-         abi_def abi;
-         BOOST_REQUIRE_EQUAL(abi_serializer::to_abi(accnt.abi, abi), true);
-         bpay_abi_ser.set_abi(abi, abi_serializer::create_yield_function(abi_serializer_max_time));
-      }
-      #endif//ENABLE_BPAY
 
       set_code( "flon.reward"_n, contracts::reward_wasm());
       set_abi( "flon.reward"_n, contracts::reward_abi().data() );
@@ -1286,28 +1275,8 @@ public:
       return data.empty() ? fc::variant() : abi_ser.binary_to_variant( "schedules_info", data, abi_serializer::create_yield_function(abi_serializer_max_time) );
    }
 
-   #ifdef ENABLE_BPAY
-
-   action_result bpay_claimrewards( const account_name owner ) {
-      action act;
-      act.account = "flon.bpay"_n;
-      act.name = "claimrewards"_n;
-      act.data = abi_ser.variant_to_binary( bpay_abi_ser.get_action_type("claimrewards"_n), mvo()("owner", owner), abi_serializer::create_yield_function(abi_serializer_max_time) );
-
-      return base_tester::push_action( std::move(act), owner.to_uint64_t() );
-   }
-
-   fc::variant get_bpay_rewards( account_name producer ) {
-      vector<char> data = get_row_by_account( "flon.bpay"_n, "flon.bpay"_n, "rewards"_n, producer );
-      return data.empty() ? fc::variant() : bpay_abi_ser.binary_to_variant( "rewards_row", data, abi_serializer::create_yield_function(abi_serializer_max_time) );
-   }
-   #endif//ENABLE_BPAY
-
    abi_serializer abi_ser;
    abi_serializer token_abi_ser;
-   #ifdef ENABLE_BPAY
-   abi_serializer bpay_abi_ser;
-   #endif//ENABLE_BPAY
 };
 
 inline fc::mutable_variant_object voter( account_name acct ) {
