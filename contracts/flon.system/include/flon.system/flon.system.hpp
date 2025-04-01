@@ -322,20 +322,14 @@ namespace eosiosystem {
    struct [[eosio::table, eosio::contract("flon.system")]] voter_info {
       name                owner;     /// the voter
       std::vector<name>   producers; /// the producers approved by this voter
-      int64_t             staked = 0; /// staked of CPU and NET
-
-      //  Every time a vote is cast we must first "undo" the last vote weight, before casting the
-      //  new vote weight.  Vote weight is calculated as:
-      //  stated.amount * 2 ^ ( weeks_since_launch/weeks_per_year)
-      double              last_vote_weight = 0; /// [deprecated] the vote weight cast the last time the vote was updated
-
+      int64_t             staked                = 0; /// staked of votes
       int64_t             votes                 = 0;  /// elected votes
       block_timestamp     last_unvoted_time;          /// vote updated time
 
       uint64_t primary_key()const { return owner.value; }
 
       // explicit serialization macro is not necessary, used here only to improve compilation time
-      EOSLIB_SERIALIZE( voter_info, (owner)(producers)(staked)(last_vote_weight)
+      EOSLIB_SERIALIZE( voter_info, (owner)(producers)(staked)
                                     (votes)(last_unvoted_time) )
    };
 

@@ -1224,7 +1224,6 @@ inline fc::mutable_variant_object voter( account_name acct ) {
       ("proxy", name(0).to_string())
       ("producers", variants() )
       ("staked", int64_t(0))
-      //("last_vote_weight", double(0))
       ;
 }
 inline fc::mutable_variant_object voter( std::string_view acct ) {
