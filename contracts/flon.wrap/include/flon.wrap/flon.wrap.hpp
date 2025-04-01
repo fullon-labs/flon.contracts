@@ -3,7 +3,6 @@
 #include <eosio/eosio.hpp>
 #include <eosio/ignore.hpp>
 #include <eosio/transaction.hpp>
-#include <contract_version.hpp>
 
 namespace eosio {
    /**
@@ -16,8 +15,6 @@ namespace eosio {
    class [[eosio::contract("flon.wrap")]] wrap : public contract {
       public:
          using contract::contract;
-
-         DEFINE_VERSION_ACTION(wrap)
 
          /**
           * Execute action.

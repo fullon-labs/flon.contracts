@@ -5,12 +5,21 @@
 #include <eosio/crypto.hpp>
 #include <eosio/dispatcher.hpp>
 
+#ifdef ENABLE_CONTRACT_VERSION
+#include <contract_version.hpp>
+#endif//ENABLE_CONTRACT_VERSION
+
 #include <cmath>
 
 namespace eosiosystem {
 
    using eosio::current_time_point;
    using eosio::token;
+
+
+   #ifdef ENABLE_CONTRACT_VERSION
+   DEFINE_VERSION_CONTRACT_CLASS("flon.system", system_contract)
+   #endif//ENABLE_CONTRACT_VERSION
 
    double get_continuous_rate(int64_t annual_rate) {
       return std::log1p(double(annual_rate)/double(100*inflation_precision));

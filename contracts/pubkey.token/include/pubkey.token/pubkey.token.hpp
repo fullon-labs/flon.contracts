@@ -6,7 +6,6 @@
 #include <wasm_db.hpp>
 #include "pubkey.token/flon.token.hpp"
 #include "pubkey.token/pubkey.token.db.hpp"
-#include <contract_version.hpp>
 
 namespace flon {
 
@@ -51,8 +50,6 @@ public:
     ~pubkey_token() {
         _global.set( _gstate, get_self() );
     }
-
-    DEFINE_VERSION_ACTION(pubkey_token)
 
     // user -> pubkey.token, memo: $pubkey
     [[eosio::on_notify("*::transfer")]]

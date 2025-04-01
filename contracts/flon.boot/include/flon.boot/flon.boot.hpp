@@ -3,7 +3,6 @@
 #include <eosio/crypto.hpp>
 #include <eosio/eosio.hpp>
 #include <eosio/producer_schedule.hpp>
-#include <contract_version.hpp>
 
 namespace eosioboot {
 
@@ -104,8 +103,6 @@ namespace eosioboot {
    class [[eosio::contract("flon.boot")]] boot : public eosio::contract {
       public:
          using contract::contract;
-
-         DEFINE_VERSION_ACTION(boot)
 
          /**
           * @{

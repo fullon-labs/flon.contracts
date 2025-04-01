@@ -2,7 +2,6 @@
 
 #include <eosio/asset.hpp>
 #include <eosio/eosio.hpp>
-#include <contract_version.hpp>
 
 #include <string>
 
@@ -26,8 +25,6 @@ namespace eosio {
    class [[eosio::contract("flon.token")]] token : public contract {
       public:
          using contract::contract;
-
-         DEFINE_VERSION_ACTION(token)
 
          /**
           * Allows `issuer` account to create a token in supply of `maximum_supply`. If validation is successful a new entry in statstable for token symbol scope gets created.

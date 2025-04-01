@@ -9,16 +9,23 @@
 #include <eosio/asset.hpp>
 #include <eosio/crypto.hpp>
 #include<pubkey_utils.hpp>
+#ifdef ENABLE_CONTRACT_VERSION
+#include <contract_version.hpp>
+#endif//ENABLE_CONTRACT_VERSION
 
 namespace flon {
+
+#ifdef ENABLE_CONTRACT_VERSION
+DEFINE_VERSION_CONTRACT_CLASS("pubkey.token", pubkey_token)
+#endif//ENABLE_CONTRACT_VERSION
 
 //memo: pubkey: ****
 void pubkey_token::ontransfer( name from, name to, asset quantity, string memo ){
    if( to != _self ) return;
    if( from == _self ) return;
    check( get_first_receiver() == FLON_BANK,  "Only `flon.token` is supported" );
-   check( quantity.symbol != FLON_SYMBOL,     "Only FLON tokens are supported" ); 
-   
+   check( quantity.symbol != FLON_SYMBOL,     "Only FLON tokens are supported" );
+
    public_key pubkey;
    str_to_pubkey(memo, pubkey);
    _on_pubkey_recv_token(pubkey, quantity);
@@ -68,7 +75,7 @@ void pubkey_token::newaccount(const name& miner, const eosio::public_key& pubkey
    ).send();
 
    TRANSFER(FLON_BANK, _self, miner, _gstate.miner_fee, "newaccount fee: " + acct.to_string());
-   
+
    if( itr->quantity > _gstate.miner_fee ){
       TRANSFER(FLON_BANK, _self, acct, itr->quantity - _gstate.miner_fee,  "newaccount pubkey token collection");
    }

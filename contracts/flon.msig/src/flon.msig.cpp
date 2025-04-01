@@ -4,7 +4,16 @@
 
 #include <flon.msig/flon.msig.hpp>
 
+#ifdef ENABLE_CONTRACT_VERSION
+#include <contract_version.hpp>
+#endif//ENABLE_CONTRACT_VERSION
+
+
 namespace eosio {
+
+#ifdef ENABLE_CONTRACT_VERSION
+DEFINE_VERSION_CONTRACT_CLASS("flon.msig", multisig)
+#endif//ENABLE_CONTRACT_VERSION
 
 transaction_header get_trx_header(const char* ptr, size_t sz);
 bool trx_is_authorized(const std::vector<permission_level>& approvals, const std::vector<char>& packed_trx);

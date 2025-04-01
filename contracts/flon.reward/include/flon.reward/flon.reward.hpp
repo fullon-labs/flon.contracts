@@ -4,7 +4,6 @@
 #include <eosio/eosio.hpp>
 #include <eosio/singleton.hpp>
 #include <eosio/privileged.hpp>
-#include <contract_version.hpp>
 
 #include <string>
 
@@ -47,8 +46,6 @@ namespace flon {
          {
             _gstate  = _global.exists() ? _global.get() : global_state{};
          }
-
-         DEFINE_VERSION_ACTION(flon_reward)
 
          /**
           * Register producer action.

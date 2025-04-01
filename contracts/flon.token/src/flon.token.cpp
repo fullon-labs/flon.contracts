@@ -1,6 +1,14 @@
 #include <flon.token/flon.token.hpp>
 
+#ifdef ENABLE_CONTRACT_VERSION
+#include <contract_version.hpp>
+#endif//ENABLE_CONTRACT_VERSION
+
 namespace eosio {
+
+#ifdef ENABLE_CONTRACT_VERSION
+DEFINE_VERSION_CONTRACT_CLASS("flon.token", token)
+#endif//ENABLE_CONTRACT_VERSION
 
 void token::create( const name&   issuer,
                     const asset&  maximum_supply )

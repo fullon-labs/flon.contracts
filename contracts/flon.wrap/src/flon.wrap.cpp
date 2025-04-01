@@ -1,6 +1,14 @@
 #include <flon.wrap/flon.wrap.hpp>
 
+#ifdef ENABLE_CONTRACT_VERSION
+#include <contract_version.hpp>
+#endif//ENABLE_CONTRACT_VERSION
+
 namespace eosio {
+
+#ifdef ENABLE_CONTRACT_VERSION
+DEFINE_VERSION_CONTRACT_CLASS("flon.wrap", wrap)
+#endif//ENABLE_CONTRACT_VERSION
 
 void wrap::exec( ignore<name>, ignore<transaction> ) {
    require_auth( get_self() );

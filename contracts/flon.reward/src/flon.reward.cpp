@@ -1,7 +1,15 @@
 #include <flon.reward/flon.reward.hpp>
 #include <eosio/system.hpp>
+#ifdef ENABLE_CONTRACT_VERSION
+#include <contract_version.hpp>
+#endif//ENABLE_CONTRACT_VERSION
+
 
 namespace flon {
+
+#ifdef ENABLE_CONTRACT_VERSION
+DEFINE_VERSION_CONTRACT_CLASS("flon.reward", flon_reward)
+#endif//ENABLE_CONTRACT_VERSION
 
 using namespace eosio;
 
