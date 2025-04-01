@@ -9,7 +9,6 @@
 #include <eosio/time.hpp>
 #include <eosio/instant_finality.hpp>
 
-#include <flon.system/exchange_state.hpp>
 #include <flon.system/native.hpp>
 
 #include <deque>

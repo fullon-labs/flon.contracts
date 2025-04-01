@@ -132,48 +132,48 @@ BOOST_FIXTURE_TEST_CASE( buysell, eosio_system_tester ) try {
    BOOST_REQUIRE_EQUAL( false, get_row_by_account( config::system_account_name, config::system_account_name,
                                                    "rammarket"_n, account_name(symbol{SY(4,RAMCORE)}.value()) ).empty() );
 
-   auto get_ram_market = [this]() -> fc::variant {
-      vector<char> data = get_row_by_account( config::system_account_name, config::system_account_name,
-                                              "rammarket"_n, account_name(symbol{SY(4,RAMCORE)}.value()) );
-      BOOST_REQUIRE( !data.empty() );
-      return abi_ser.binary_to_variant("exchange_state", data, abi_serializer::create_yield_function(abi_serializer_max_time));
-   };
+   // auto get_ram_market = [this]() -> fc::variant {
+   //    vector<char> data = get_row_by_account( config::system_account_name, config::system_account_name,
+   //                                            "rammarket"_n, account_name(symbol{SY(4,RAMCORE)}.value()) );
+   //    BOOST_REQUIRE( !data.empty() );
+   //    return abi_ser.binary_to_variant("exchange_state", data, abi_serializer::create_yield_function(abi_serializer_max_time));
+   // };
 
-   {
-      transfer( config::system_account_name, "alice1111111"_n, core_sym::from_string("10000000.0000"), config::system_account_name );
-      uint64_t bytes0 = get_total_stake( "alice1111111" )["ram_bytes"].as_uint64();
+   // {
+   //    transfer( config::system_account_name, "alice1111111"_n, core_sym::from_string("10000000.0000"), config::system_account_name );
+   //    uint64_t bytes0 = get_total_stake( "alice1111111" )["ram_bytes"].as_uint64();
 
-      auto market = get_ram_market();
-      const asset r0 = market["base"].as<connector>().balance;
-      const asset e0 = market["quote"].as<connector>().balance;
-      BOOST_REQUIRE_EQUAL( asset::from_string("0 RAM").get_symbol(),     r0.get_symbol() );
-      BOOST_REQUIRE_EQUAL( core_sym::from_string("0.0000").get_symbol(), e0.get_symbol() );
+   //    auto market = get_ram_market();
+   //    const asset r0 = market["base"].as<connector>().balance;
+   //    const asset e0 = market["quote"].as<connector>().balance;
+   //    BOOST_REQUIRE_EQUAL( asset::from_string("0 RAM").get_symbol(),     r0.get_symbol() );
+   //    BOOST_REQUIRE_EQUAL( core_sym::from_string("0.0000").get_symbol(), e0.get_symbol() );
 
-      const asset payment = core_sym::from_string("10000000.0000");
-      BOOST_REQUIRE_EQUAL( success(), buyram( "alice1111111", "alice1111111", payment ) );
-      uint64_t bytes1 = get_total_stake( "alice1111111" )["ram_bytes"].as_uint64();
+   //    const asset payment = core_sym::from_string("10000000.0000");
+   //    BOOST_REQUIRE_EQUAL( success(), buyram( "alice1111111", "alice1111111", payment ) );
+   //    uint64_t bytes1 = get_total_stake( "alice1111111" )["ram_bytes"].as_uint64();
 
-      const int64_t fee = (payment.get_amount() + 199) / 200;
-      const double net_payment = payment.get_amount() - fee;
-      const uint64_t expected_delta = net_payment * r0.get_amount() / ( net_payment + e0.get_amount() );
+   //    const int64_t fee = (payment.get_amount() + 199) / 200;
+   //    const double net_payment = payment.get_amount() - fee;
+   //    const uint64_t expected_delta = net_payment * r0.get_amount() / ( net_payment + e0.get_amount() );
 
-      BOOST_REQUIRE_EQUAL( expected_delta, bytes1 -  bytes0 );
-   }
+   //    BOOST_REQUIRE_EQUAL( expected_delta, bytes1 -  bytes0 );
+   // }
 
-   {
-      transfer( config::system_account_name, "bob111111111"_n, core_sym::from_string("100000.0000"), config::system_account_name );
-      BOOST_REQUIRE_EQUAL( wasm_assert_msg("must reserve a positive amount"),
-                           buyrambytes( "bob111111111", "bob111111111", 1 ) );
+   // {
+   //    transfer( config::system_account_name, "bob111111111"_n, core_sym::from_string("100000.0000"), config::system_account_name );
+   //    BOOST_REQUIRE_EQUAL( wasm_assert_msg("must reserve a positive amount"),
+   //                         buyrambytes( "bob111111111", "bob111111111", 1 ) );
 
-      uint64_t bytes0 = get_total_stake( "bob111111111" )["ram_bytes"].as_uint64();
-      BOOST_REQUIRE_EQUAL( success(), buyrambytes( "bob111111111", "bob111111111", 1024 ) );
-      uint64_t bytes1 = get_total_stake( "bob111111111" )["ram_bytes"].as_uint64();
-      BOOST_REQUIRE( within_one( 1024, bytes1 - bytes0 ) );
+   //    uint64_t bytes0 = get_total_stake( "bob111111111" )["ram_bytes"].as_uint64();
+   //    BOOST_REQUIRE_EQUAL( success(), buyrambytes( "bob111111111", "bob111111111", 1024 ) );
+   //    uint64_t bytes1 = get_total_stake( "bob111111111" )["ram_bytes"].as_uint64();
+   //    BOOST_REQUIRE( within_one( 1024, bytes1 - bytes0 ) );
 
-      BOOST_REQUIRE_EQUAL( success(), buyrambytes( "bob111111111", "bob111111111", 1024 * 1024) );
-      uint64_t bytes2 = get_total_stake( "bob111111111" )["ram_bytes"].as_uint64();
-      BOOST_REQUIRE( within_one( 1024 * 1024, bytes2 - bytes1 ) );
-   }
+   //    BOOST_REQUIRE_EQUAL( success(), buyrambytes( "bob111111111", "bob111111111", 1024 * 1024) );
+   //    uint64_t bytes2 = get_total_stake( "bob111111111" )["ram_bytes"].as_uint64();
+   //    BOOST_REQUIRE( within_one( 1024 * 1024, bytes2 - bytes1 ) );
+   // }
 
 } FC_LOG_AND_RETHROW()
 
