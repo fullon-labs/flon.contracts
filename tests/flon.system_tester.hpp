@@ -1096,11 +1096,6 @@ public:
       return data.empty() ? fc::variant() : abi_ser.binary_to_variant( "eosio_global_state3", data, abi_serializer::create_yield_function(abi_serializer_max_time) );
    }
 
-   fc::variant get_global_state4() {
-      vector<char> data = get_row_by_account( config::system_account_name, config::system_account_name, "global4"_n, "global4"_n );
-      return data.empty() ? fc::variant() : abi_ser.binary_to_variant( "eosio_global_state4", data, abi_serializer::create_yield_function(abi_serializer_max_time) );
-   }
-
    fc::variant get_refund_request( name account ) {
       vector<char> data = get_row_by_account( config::system_account_name, account, "refunds"_n, account );
       return data.empty() ? fc::variant() : abi_ser.binary_to_variant( "refund_request", data, abi_serializer::create_yield_function(abi_serializer_max_time) );
