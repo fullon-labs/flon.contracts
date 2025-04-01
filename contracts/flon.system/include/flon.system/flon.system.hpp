@@ -206,20 +206,6 @@ namespace eosiosystem {
                                 (last_name_close)(revision) )
    };
 
-   // Defines new global state parameters added after version 1.0
-   struct [[eosio::table("global2"), eosio::contract("flon.system")]] eosio_global_state2 {
-      eosio_global_state2(){}
-
-      uint16_t          new_ram_per_block = 0;
-      block_timestamp   last_ram_increase;
-      block_timestamp   last_block_num; /* deprecated */
-      double            total_producer_votepay_share = 0;
-      uint8_t           revision = 0; ///< used to track version updates in the future.
-
-      EOSLIB_SERIALIZE( eosio_global_state2, (new_ram_per_block)(last_ram_increase)(last_block_num)
-                        (total_producer_votepay_share)(revision) )
-   };
-
    inline eosio::block_signing_authority convert_to_block_signing_authority( const eosio::public_key& producer_key ) {
       return eosio::block_signing_authority_v0{ .threshold = 1, .keys = {{producer_key, 1}} };
    }
@@ -429,8 +415,6 @@ namespace eosiosystem {
 
    typedef eosio::singleton< "global"_n, eosio_global_state >   global_state_singleton;
 
-   typedef eosio::singleton< "global2"_n, eosio_global_state2 > global_state2_singleton;
-
    struct [[eosio::table, eosio::contract("flon.system")]] vote_refund {
       name            owner;
       time_point_sec  request_time;
@@ -467,9 +451,7 @@ namespace eosiosystem {
          std::optional<std::vector<finalizer_auth_info>> _last_prop_finalizers_cached;
          fin_key_id_gen_table     _fin_key_id_generator;
          global_state_singleton   _global;
-         global_state2_singleton  _global2;
          eosio_global_state       _gstate;
-         eosio_global_state2      _gstate2;
 
       public:
          static constexpr eosio::name active_permission     = {"active"_n};
@@ -866,16 +848,6 @@ namespace eosiosystem {
          void rmvproducer( const name& producer );
 
          /**
-          * Update revision action, updates the current revision.
-          * @param revision - it has to be incremented by 1 compared with current revision.
-          *
-          * @pre Current revision can not be higher than 254, and has to be smaller
-          * than or equal 1 (“set upper bound to greatest revision supported in the code”).
-          */
-         [[eosio::action]]
-         void updtrevision( uint8_t revision );
-
-         /**
           * Bid name action, allows an account `bidder` to place a bid for a name `newname`.
           * @param bidder - the account placing the bid,
           * @param newname - the name the bid is placed for,
@@ -946,7 +918,6 @@ namespace eosiosystem {
          using regproxy_action = eosio::action_wrapper<"regproxy"_n, &system_contract::regproxy>;
          using claimrewards_action = eosio::action_wrapper<"claimrewards"_n, &system_contract::claimrewards>;
          using rmvproducer_action = eosio::action_wrapper<"rmvproducer"_n, &system_contract::rmvproducer>;
-         using updtrevision_action = eosio::action_wrapper<"updtrevision"_n, &system_contract::updtrevision>;
          using bidname_action = eosio::action_wrapper<"bidname"_n, &system_contract::bidname>;
          using bidrefund_action = eosio::action_wrapper<"bidrefund"_n, &system_contract::bidrefund>;
          using setpriv_action = eosio::action_wrapper<"setpriv"_n, &system_contract::setpriv>;

@@ -33,11 +33,6 @@ namespace eosiosystem {
       // Add latest block information to blockinfo table.
       add_to_blockinfo_table(previous_block_id, timestamp);
 
-      // _gstate2.last_block_num is not used anywhere in the system contract code anymore.
-      // Although this field is deprecated, we will continue updating it for now until the last_block_num field
-      // is eventually completely removed, at which point this line can be removed.
-      _gstate2.last_block_num = timestamp;
-
       /** check producer reward started */
       if( _gstate.election_activated_time == time_point() || timestamp < _gstate.election_activated_time )
          return;

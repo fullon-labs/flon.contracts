@@ -34,11 +34,9 @@ namespace eosiosystem {
     _finalizers(get_self(), get_self().value),
     _last_prop_finalizers(get_self(), get_self().value),
     _fin_key_id_generator(get_self(), get_self().value),
-    _global(get_self(), get_self().value),
-    _global2(get_self(), get_self().value)
+    _global(get_self(), get_self().value)
    {
       _gstate  = _global.exists() ? _global.get() : get_default_parameters();
-      _gstate2 = _global2.exists() ? _global2.get() : eosio_global_state2{};
    }
 
    eosio_global_state system_contract::get_default_parameters() {
@@ -54,7 +52,6 @@ namespace eosiosystem {
 
    system_contract::~system_contract() {
       _global.set( _gstate, get_self() );
-      _global2.set( _gstate2, get_self() );
    }
 
    void system_contract::channel_to_system_fees( const name& from, const asset& amount ) {
@@ -216,15 +213,6 @@ namespace eosiosystem {
       _producers.modify( prod, same_payer, [&](auto& p) {
             p.deactivate();
          });
-   }
-
-   void system_contract::updtrevision( uint8_t revision ) {
-      require_auth( get_self() );
-      check( _gstate2.revision < 255, "can not increment revision" ); // prevent wrap around
-      check( revision == _gstate2.revision + 1, "can only increment revision by one" );
-      check( revision <= 1, // set upper bound to greatest revision supported in the code
-             "specified revision is not yet supported by the code" );
-      _gstate2.revision = revision;
    }
 
    /**

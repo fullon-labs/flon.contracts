@@ -303,17 +303,6 @@ icon: @ICON_BASE_URL@/@ACCOUNT_ICON_URI@
 Modify, and create if necessary, the {{permission}} permission of {{account}} to have a parent permission of {{parent}} and the following authority:
 {{to_json auth}}
 
-<h1 class="contract">updtrevision</h1>
-
----
-spec_version: "0.2.0"
-title: Update System Contract Revision Number
-summary: 'Update system contract revision number'
-icon: @ICON_BASE_URL@/@ADMIN_ICON_URI@
----
-
-{{$action.account}} advances the system contract revision number to {{revision}}.
-
 <h1 class="contract">voteproducer</h1>
 
 ---

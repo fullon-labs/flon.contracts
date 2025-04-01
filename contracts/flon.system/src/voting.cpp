@@ -75,7 +75,6 @@ namespace eosiosystem {
                info.owner                     = producer;
                info.last_votepay_share_update = ct;
             });
-            // When introducing the producer2 table row for the first time, the producer's votes must also be accounted for in the global total_producer_votepay_share at the same time.
          }
       } else {
          _producers.emplace( producer, [&]( producer_info& info ){
