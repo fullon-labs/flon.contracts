@@ -958,21 +958,6 @@ namespace eosiosystem {
          //                 const asset& main_rewards_per_block, const asset& backup_rewards_per_block );
 
          /**
-          * Change how inflated or vested tokens will be distributed based on the following structure.
-          *
-          * @param inflation_pay_factor - Inverse of the fraction of the inflation used to reward block producers.
-          *     The remaining inflation will be sent to the `flon.saving` account.
-          *     (eg. For 20% of inflation going to block producer rewards   => inflation_pay_factor = 50000
-          *          For 100% of inflation going to block producer rewards  => inflation_pay_factor = 10000).
-          * @param votepay_factor - Inverse of the fraction of the block producer rewards to be distributed proportional to blocks produced.
-          *     The remaining rewards will be distributed proportional to votes received.
-          *     (eg. For 25% of block producer rewards going towards block pay => votepay_factor = 40000
-          *          For 75% of block producer rewards going towards block pay => votepay_factor = 13333).
-          */
-         [[eosio::action]]
-         void setpayfactor( int64_t inflation_pay_factor, int64_t votepay_factor );
-
-         /**
           * Set the schedule for pre-determined annual rate changes.
           *
           * @param start_time - the time to start the schedule.
@@ -1038,7 +1023,6 @@ namespace eosiosystem {
          using setalimits_action = eosio::action_wrapper<"setalimits"_n, &system_contract::setalimits>;
          using setparams_action = eosio::action_wrapper<"setparams"_n, &system_contract::setparams>;
          // using cfgreward_action = eosio::action_wrapper<"cfgreward"_n, &system_contract::cfgreward>;
-         using setpayfactor_action = eosio::action_wrapper<"setpayfactor"_n, &system_contract::setpayfactor>;
          using execschedule_action = eosio::action_wrapper<"execschedule"_n, &system_contract::execschedule>;
          using setschedule_action = eosio::action_wrapper<"setschedule"_n, &system_contract::setschedule>;
          using delschedule_action = eosio::action_wrapper<"delschedule"_n, &system_contract::delschedule>;

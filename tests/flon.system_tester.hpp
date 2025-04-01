@@ -1238,13 +1238,6 @@ public:
       }
    }
 
-   action_result setpayfactor( int64_t inflation_pay_factor, int64_t votepay_factor ) {
-      return push_action( "flon"_n, "setpayfactor"_n, mvo()
-               ("inflation_pay_factor", inflation_pay_factor)
-               ("votepay_factor", votepay_factor)
-      );
-   }
-
    action_result setschedule( const time_point_sec start_time, double continuous_rate ) {
       return push_action( "flon"_n, "setschedule"_n, mvo()
                ("start_time", start_time)
