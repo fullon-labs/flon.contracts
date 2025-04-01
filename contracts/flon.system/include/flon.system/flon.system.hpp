@@ -235,45 +235,6 @@ namespace eosiosystem {
          producer_authority = eosio::block_signing_authority{};
          is_active = false;
       }
-
-      // The unregprod and claimrewards actions modify unrelated fields of the producers table and under the default
-      // serialization behavior they would increase the size of the serialized table if the producer_authority field
-      // was not already present. This is acceptable (though not necessarily desired) because those two actions require
-      // the authority of the producer who pays for the table rows.
-      // However, the rmvproducer action and the onblock transaction would also modify the producer table in a similar
-      // way and increasing its serialized size is not acceptable in that context.
-      // So, a custom serialization is defined to handle the binary_extension producer_authority
-      // field in the desired way. (Note: v1.9.0 did not have this custom serialization behavior.)
-
-      template<typename DataStream>
-      friend DataStream& operator << ( DataStream& ds, const producer_info& t ) {
-         ds << t.owner
-            << t.total_votes
-            << t.producer_key
-            << t.is_active
-            << t.url
-            << t.unclaimed_rewards
-            << t.last_claim_time
-            << t.location
-            << t.producer_authority
-            << t.reward_shared_ratio;
-
-         return ds;
-      }
-
-      template<typename DataStream>
-      friend DataStream& operator >> ( DataStream& ds, producer_info& t ) {
-         return ds >> t.owner
-                   >> t.total_votes
-                   >> t.producer_key
-                   >> t.is_active
-                   >> t.url
-                   >> t.unclaimed_rewards
-                   >> t.last_claim_time
-                   >> t.location
-                   >> t.producer_authority
-                   >> t.reward_shared_ratio;
-      }
    };
 
    // finalizer_key_info stores information about a finalizer key.
