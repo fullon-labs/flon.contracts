@@ -239,17 +239,6 @@ namespace eosiosystem {
       EOSLIB_SERIALIZE( eosio_global_state4, (continuous_rate)(inflation_pay_factor)(votepay_factor) )
    };
 
-   // Defines the schedule for pre-determined annual rate changes.
-   struct [[eosio::table, eosio::contract("flon.system")]] schedules_info {
-      time_point_sec start_time;
-      double   continuous_rate;
-
-      uint64_t primary_key() const { return start_time.sec_since_epoch(); }
-
-      // explicit serialization macro is not necessary, used here only to improve compilation time
-      EOSLIB_SERIALIZE( schedules_info, (start_time)(continuous_rate) )
-   };
-
    inline eosio::block_signing_authority convert_to_block_signing_authority( const eosio::public_key& producer_key ) {
       return eosio::block_signing_authority_v0{ .threshold = 1, .keys = {{producer_key, 1}} };
    }
@@ -457,8 +446,6 @@ namespace eosiosystem {
 
    typedef eosio::multi_index< "producers2"_n, producer_info2 > producers_table2;
 
-   typedef eosio::multi_index< "schedules"_n, schedules_info > schedules_table;
-
    typedef eosio::singleton< "global"_n, eosio_global_state >   global_state_singleton;
 
    typedef eosio::singleton< "global2"_n, eosio_global_state2 > global_state2_singleton;
@@ -510,7 +497,6 @@ namespace eosiosystem {
          eosio_global_state2      _gstate2;
          eosio_global_state3      _gstate3;
          eosio_global_state4      _gstate4;
-         schedules_table          _schedules;
 
       public:
          static constexpr eosio::name active_permission     = {"active"_n};
@@ -944,47 +930,18 @@ namespace eosiosystem {
          [[eosio::action]]
          void bidrefund( const name& bidder, const name& newname );
 
-         /**
-          * Config reward parameters
-          * Only be set after contract init() and before reward start.
-          *
-          * @param init_reward_start_time - start time of initializing reward phase.
-          * @param init_reward_end_time - end time of initializing reward phase.
-          * @param main_rewards_per_block - rewards per block of main producers in initializing reward phase.
-          * @param backup_rewards_per_block - rewards per block of backup producers in initializing reward phase.
-          */
+         // /**
+         //  * Config reward parameters
+         //  * Only be set after contract init() and before reward start.
+         //  *
+         //  * @param init_reward_start_time - start time of initializing reward phase.
+         //  * @param init_reward_end_time - end time of initializing reward phase.
+         //  * @param main_rewards_per_block - rewards per block of main producers in initializing reward phase.
+         //  * @param backup_rewards_per_block - rewards per block of backup producers in initializing reward phase.
+         //  */
          // [[eosio::action]]
          // void cfgreward( const time_point& init_reward_start_time, const time_point& init_reward_end_time,
          //                 const asset& main_rewards_per_block, const asset& backup_rewards_per_block );
-
-         /**
-          * Set the schedule for pre-determined annual rate changes.
-          *
-          * @param start_time - the time to start the schedule.
-          * @param continuous_rate - the inflation or distribution rate of the core token supply.
-          *     (eg. For 5% => 0.05
-          *          For 1.5% => 0.015)
-          */
-         [[eosio::action]]
-         void setschedule( const time_point_sec start_time, double continuous_rate );
-
-         /**
-          * Delete the schedule for pre-determined annual rate changes.
-          *
-          * @param start_time - the time to start the schedule.
-          */
-         [[eosio::action]]
-         void delschedule( const time_point_sec start_time );
-
-         /**
-          * Executes the next schedule for pre-determined annual rate changes.
-          *
-          * Start time of the schedule must be in the past.
-          *
-          * Can be executed by any account.
-          */
-         [[eosio::action]]
-         void execschedule();
 
          /**
           * limitauthchg opts into or out of restrictions on updateauth, deleteauth, linkauth, and unlinkauth.
@@ -1023,9 +980,6 @@ namespace eosiosystem {
          using setalimits_action = eosio::action_wrapper<"setalimits"_n, &system_contract::setalimits>;
          using setparams_action = eosio::action_wrapper<"setparams"_n, &system_contract::setparams>;
          // using cfgreward_action = eosio::action_wrapper<"cfgreward"_n, &system_contract::cfgreward>;
-         using execschedule_action = eosio::action_wrapper<"execschedule"_n, &system_contract::execschedule>;
-         using setschedule_action = eosio::action_wrapper<"setschedule"_n, &system_contract::setschedule>;
-         using delschedule_action = eosio::action_wrapper<"delschedule"_n, &system_contract::delschedule>;
 
       private:
          // Implementation details:
@@ -1049,7 +1003,6 @@ namespace eosiosystem {
          static eosio_global_state get_default_parameters();
          static eosio_global_state4 get_default_inflation_parameters();
          void channel_to_system_fees( const name& from, const asset& amount );
-         bool execute_next_schedule();
 
          // defined in voting.cpp
          void register_producer( const name& producer, const eosio::block_signing_authority& producer_authority,

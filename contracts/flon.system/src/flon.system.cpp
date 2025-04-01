@@ -37,8 +37,7 @@ namespace eosiosystem {
     _global(get_self(), get_self().value),
     _global2(get_self(), get_self().value),
     _global3(get_self(), get_self().value),
-    _global4(get_self(), get_self().value),
-    _schedules(get_self(), get_self().value)
+    _global4(get_self(), get_self().value)
    {
       _gstate  = _global.exists() ? _global.get() : get_default_parameters();
       _gstate2 = _global2.exists() ? _global2.get() : eosio_global_state2{};
@@ -240,54 +239,6 @@ namespace eosiosystem {
       check( revision <= 1, // set upper bound to greatest revision supported in the code
              "specified revision is not yet supported by the code" );
       _gstate2.revision = revision;
-   }
-
-   void system_contract::setschedule( const time_point_sec start_time, double continuous_rate )
-   {
-      require_auth( get_self() );
-
-      check(continuous_rate >= 0, "continuous_rate can't be negative");
-      check(continuous_rate <= 1, "continuous_rate can't be over 100%");
-
-      auto itr = _schedules.find( start_time.sec_since_epoch() );
-
-      if( itr == _schedules.end() ) {
-         _schedules.emplace( get_self(), [&]( auto& s ) {
-            s.start_time = start_time;
-            s.continuous_rate = continuous_rate;
-         });
-      } else {
-         _schedules.modify( itr, same_payer, [&]( auto& s ) {
-            s.continuous_rate = continuous_rate;
-         });
-      }
-   }
-
-   void system_contract::delschedule( const time_point_sec start_time )
-   {
-      require_auth( get_self() );
-
-      auto itr = _schedules.require_find( start_time.sec_since_epoch(), "schedule not found" );
-      _schedules.erase( itr );
-   }
-
-   void system_contract::execschedule()
-   {
-      check(execute_next_schedule(), "no schedule to execute");
-   }
-
-   bool system_contract::execute_next_schedule()
-   {
-      auto itr = _schedules.begin();
-      if (itr == _schedules.end()) return false; // no schedules to execute
-
-      if ( current_time_point().sec_since_epoch() >= itr->start_time.sec_since_epoch() ) {
-         _gstate4.continuous_rate = itr->continuous_rate;
-         _global4.set( _gstate4, get_self() );
-         _schedules.erase( itr );
-         return true;
-      }
-      return false;
    }
 
    /**

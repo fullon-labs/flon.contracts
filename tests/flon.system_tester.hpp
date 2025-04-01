@@ -1238,28 +1238,6 @@ public:
       }
    }
 
-   action_result setschedule( const time_point_sec start_time, double continuous_rate ) {
-      return push_action( "flon"_n, "setschedule"_n, mvo()
-               ("start_time", start_time)
-               ("continuous_rate",     continuous_rate)
-      );
-   }
-
-   action_result delschedule( const time_point_sec start_time ) {
-      return push_action( "flon"_n, "delschedule"_n, mvo()
-               ("start_time", start_time)
-      );
-   }
-
-   action_result execschedule( const name executor ) {
-      return push_action( executor, "execschedule"_n, mvo());
-   }
-
-   fc::variant get_vesting_schedule( uint64_t time ) {
-      vector<char> data = get_row_by_account( "flon"_n, "flon"_n, "schedules"_n, account_name(time) );
-      return data.empty() ? fc::variant() : abi_ser.binary_to_variant( "schedules_info", data, abi_serializer::create_yield_function(abi_serializer_max_time) );
-   }
-
    abi_serializer abi_ser;
    abi_serializer token_abi_ser;
 };
