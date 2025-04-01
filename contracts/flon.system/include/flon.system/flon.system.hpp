@@ -212,16 +212,17 @@ namespace eosiosystem {
 
    // Defines `producer_info` structure to be stored in `producer_info` table, added after version 1.0
    struct [[eosio::table, eosio::contract("flon.system")]] producer_info {
-      name                                                     owner;
-      int64_t                                                  total_votes = 0;
-      eosio::public_key                                        producer_key; /// a packed public key object
-      bool                                                     is_active = true;
-      std::string                                              url;
-      asset                                                    unclaimed_rewards;
-      time_point                                               last_claim_time;
-      uint16_t                                                 location = 0;
-      eosio::block_signing_authority                           producer_authority;
-      uint32_t                                                 reward_shared_ratio  = 0; //reward shared ratio
+      name                             owner;
+      int64_t                          total_votes = 0;
+      eosio::public_key                producer_key; /// a packed public key object
+      bool                             is_active = true;
+      std::string                      url;
+      asset                            unclaimed_rewards;
+      time_point                       last_claim_time;
+      uint16_t                         location = 0;
+      eosio::block_signing_authority   producer_authority;
+      uint32_t                         reward_shared_ratio  = 0; //reward shared ratio
+      uint8_t                          revision = 0; ///< used to track version updates in the future.
 
       uint64_t primary_key()const { return owner.value;                             }
       uint64_t  by_votes()const    {
