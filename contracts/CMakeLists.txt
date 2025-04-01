@@ -10,6 +10,10 @@ option(SYSTEM_BLOCKCHAIN_PARAMETERS
 
 find_package(flon.cdt)
 
+if(NOT "${CONTRACT_COMPILE_OPTIONS}" STREQUAL "")
+  add_compile_options(${CONTRACT_COMPILE_OPTIONS})
+endif()
+
 set(CDT_VERSION_MIN "0.3")
 set(CDT_VERSION_SOFT_MAX "1.0")
 # set(CDT_VERSION_HARD_MAX "")
