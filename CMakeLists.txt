@@ -29,6 +29,7 @@ message(STATUS "Building eos-system-contracts v${VERSION_FULL}")
 include(ExternalProject)
 
 find_package(flon.cdt)
+message( STATUS "Found flon.cdt at \"${CDT_ROOT}\"")
 
 option(SYSTEM_CONFIGURABLE_WASM_LIMITS
        "Enables use of the host functions activated by the CONFIGURABLE_WASM_LIMITS protocol feature" ON)

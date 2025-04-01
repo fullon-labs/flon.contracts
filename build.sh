@@ -9,11 +9,10 @@ set -eo pipefail
 function usage() {
    printf "Usage: $0 OPTION...
   -e DIR      Directory where FLON is installed. (Default: $HOME/flon/X.Y)
-  -c DIR      Directory where FLON.CDT is installed. (Default: /usr/local/flon.cdt)
-  -i DIR      Directory to use for installing contraccts (Default: ${INSTALL_LOCATION})
+  -i DIR      Directory to use for installing contracts (Default: ${INSTALL_LOCATION})
   -m TARGET   make target.(Default is empty)
   -t          Build unit tests.
-  -y          Noninteractive mode (Uses defaults for each prompt.)
+  -y          Non-interactive mode (Uses defaults for each prompt.)
   -h          Print this help menu.
    \\n" "$0" 1>&2
    exit 1
@@ -26,9 +25,6 @@ if [ $# -ne 0 ]; then
     case "${opt}" in
       e )
         FLON_DIR_PROMPT=$OPTARG
-      ;;
-      c )
-        CDT_DIR_PROMPT=$OPTARG
       ;;
       i )
         INSTALL_LOCATION=$OPTARG
@@ -70,13 +66,6 @@ if [[ ${BUILD_TESTS} == true ]]; then
    # Prompt user for location of flon.
    flon-directory-prompt
 fi
-
-# Prompt user for location of flon.cdt.
-cdt-directory-prompt
-
-# Include CDT_INSTALL_DIR in CMAKE_FRAMEWORK_PATH
-echo "Using FLON.CDT installation at: $CDT_INSTALL_DIR"
-export CMAKE_FRAMEWORK_PATH="${CDT_INSTALL_DIR}:${CMAKE_FRAMEWORK_PATH}"
 
 if [[ ${BUILD_TESTS} == true ]]; then
    # Ensure flon version is appropriate.
