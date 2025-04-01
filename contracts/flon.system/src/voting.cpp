@@ -191,7 +191,7 @@ namespace eosiosystem {
    //    return double(staked) * std::pow( 2, weight );
    // }
 
-   void system_contract::voteproducer( const name& voter_name, const name& proxy, const std::vector<name>& producers ) {
+   void system_contract::voteproducer( const name& voter_name, const std::vector<name>& producers ) {
 
       require_auth(voter_name);
 
@@ -368,24 +368,6 @@ namespace eosiosystem {
       eosio::token::transfer_action transfer_act{ token_account, { {vote_account, active_permission} } };
       transfer_act.send( vote_account, itr->owner, itr->vote_staked, "voterefund" );
       vote_refund_tbl.erase( itr );
-   }
-
-   void system_contract::regproxy( const name& proxy, bool isproxy ) {
-      require_auth( proxy );
-
-      auto pitr = _voters.find( proxy.value );
-      if ( pitr != _voters.end() ) {
-         check( isproxy != pitr->is_proxy, "action has no effect" );
-         check( !isproxy || !pitr->proxy, "account that uses a proxy is not allowed to become a proxy" );
-         _voters.modify( pitr, same_payer, [&]( auto& p ) {
-               p.is_proxy = isproxy;
-            });
-      } else {
-         _voters.emplace( proxy, [&]( auto& p ) {
-               p.owner  = proxy;
-               p.is_proxy = isproxy;
-            });
-      }
    }
 
 } /// namespace eosiosystem

@@ -139,8 +139,7 @@ namespace eosiosystem {
    *
    * Just like in the `flon.bios` sample contract implementation, there are a few actions which are not implemented at the contract level (`newaccount`, `updateauth`, `deleteauth`, `linkauth`, `unlinkauth`, `canceldelay`, `onerror`, `setabi`, `setcode`), they are just declared in the contract so they will show in the contract's ABI and users will be able to push those actions to the chain via the account holding the `flon.system` contract, but the implementation is at the FULLON core level. They are referred to as FULLON native actions.
    *
-   * - Users can stake tokens for CPU and Network bandwidth, and then vote for producers or
-   *    delegate their vote to a proxy.
+   * - Users can buy gas, stake tokens for voting, and vote for producers.
    * - Producers register in order to be voted for, and can claim per-block and per-vote rewards.
    * - Users can buy and sell RAM at a market-determined price.
    * - Users can bid on premium names.
@@ -318,13 +317,11 @@ namespace eosiosystem {
 
    // Voter info. Voter info stores information about the voter:
    // - `owner` the voter
-   // - `proxy` the proxy set by the voter, if any
-   // - `producers` the producers approved by this voter if no proxy set
+   // - `producers` the producers approved by this voter
    // - `staked` the amount staked
    struct [[eosio::table, eosio::contract("flon.system")]] voter_info {
       name                owner;     /// the voter
-      name                proxy;     /// [deprecated] the proxy set by the voter, if any
-      std::vector<name>   producers; /// the producers approved by this voter if no proxy set
+      std::vector<name>   producers; /// the producers approved by this voter
       int64_t             staked = 0; /// staked of CPU and NET
 
       //  Every time a vote is cast we must first "undo" the last vote weight, before casting the
@@ -332,25 +329,14 @@ namespace eosiosystem {
       //  stated.amount * 2 ^ ( weeks_since_launch/weeks_per_year)
       double              last_vote_weight = 0; /// [deprecated] the vote weight cast the last time the vote was updated
 
-      // Total vote weight delegated to this voter.
-      double              proxied_vote_weight= 0; /// [deprecated] the total vote weight delegated to this voter as a proxy
-      bool                is_proxy = 0; /// [deprecated] whether the voter is a proxy for others
-
-      uint32_t            flags1                = 0;  /// resource managed flags
       int64_t             votes                 = 0;  /// elected votes
       block_timestamp     last_unvoted_time;          /// vote updated time
 
       uint64_t primary_key()const { return owner.value; }
 
-      enum class flags1_fields : uint32_t {
-         ram_managed = 1,
-         net_managed = 2,
-         cpu_managed = 4
-      };
-
       // explicit serialization macro is not necessary, used here only to improve compilation time
-      EOSLIB_SERIALIZE( voter_info, (owner)(proxy)(producers)(staked)(last_vote_weight)
-                                    (proxied_vote_weight)(is_proxy)(flags1)(votes)(last_unvoted_time) )
+      EOSLIB_SERIALIZE( voter_info, (owner)(producers)(staked)(last_vote_weight)
+                                    (votes)(last_unvoted_time) )
    };
 
 
@@ -381,8 +367,7 @@ namespace eosiosystem {
     *
     * Just like in the `flon.bios` sample contract implementation, there are a few actions which are not implemented at the contract level (`newaccount`, `updateauth`, `deleteauth`, `linkauth`, `unlinkauth`, `canceldelay`, `onerror`, `setabi`, `setcode`), they are just declared in the contract so they will show in the contract's ABI and users will be able to push those actions to the chain via the account holding the `flon.system` contract, but the implementation is at the FULLON core level. They are referred to as FULLON native actions.
     *
-    * - Users can stake tokens for CPU and Network bandwidth, and then vote for producers or
-    *    delegate their vote to a proxy.
+    * - Users can buy gas, stake tokens for voting, and vote for producers.
     * - Producers register in order to be voted for, and can claim per-block and per-vote rewards.
     * - Users can buy and sell RAM at a market-determined price.
     * - Users can bid on premium names.
@@ -522,7 +507,7 @@ namespace eosiosystem {
          /**
           * The buygasself action is designed to enhance the permission security by allowing an account to purchase GAS exclusively for itself.
           * This action prevents the potential risk associated with standard actions like buygas,
-          * which can transfer EOS tokens out of the account, acting as a proxy for flon.token::transfer.
+          * which can transfer CORE tokens out of the account, acting as a proxy for flon.token::transfer.
           *
           * @param account - the gas buyer and receiver,
           * @param quant - the quantity of tokens to buy gas with.
@@ -650,29 +635,22 @@ namespace eosiosystem {
 
          /**
           * Vote producer action, votes for a set of producers. This action updates the list of `producers` voted for,
-          * for `voter` account. If voting for a `proxy`, the producer votes will not change until the
-          * proxy updates their own vote. Voter can vote for a proxy __or__ a list of at most 30 producers.
+          * for `voter` account.
           * Storage change is billed to `voter`.
           *
           * @param voter - the account to change the voted producers for,
-          * @param proxy - the proxy to change the voted producers for,
           * @param producers - the list of producers to vote for, a maximum of 30 producers is allowed.
           *
           * @pre Producers must be sorted from lowest to highest and must be registered and active
-          * @pre If proxy is set then no producers can be voted for
-          * @pre If proxy is set then proxy account must exist and be registered as a proxy
-          * @pre Every listed producer or proxy must have been previously registered
           * @pre Voter must authorize this action
           * @pre Voter must have previously staked some EOS for voting
           * @pre Voter->staked must be up to date
           *
           * @post Every producer previously voted for will have vote reduced by previous vote weight
           * @post Every producer newly voted for will have vote increased by new vote amount
-          * @post Prior proxy will proxied_vote_weight decremented by previous vote weight
-          * @post New proxy will proxied_vote_weight incremented by new vote weight
           */
          [[eosio::action]]
-         void voteproducer( const name& voter, const name& proxy, const std::vector<name>& producers );
+         void voteproducer( const name& voter, const std::vector<name>& producers );
 
          /**
           * Vote producer action, new version, votes for a set of producers. This action updates the list of `producers` voted for,
@@ -730,22 +708,6 @@ namespace eosiosystem {
           */
          [[eosio::action]]
          void subvote( const name& voter, const asset& vote_staked );
-
-         /**
-          * Register proxy action, sets `proxy` account as proxy.
-          * An account marked as a proxy can vote with the weight of other accounts which
-          * have selected it as a proxy. Other accounts must refresh their voteproducer to
-          * update the proxy's weight.
-          * Storage change is billed to `proxy`.
-          *
-          * @param proxy - the account registering as voter proxy (or unregistering),
-          * @param isproxy - if true, proxy is registered; if false, proxy is unregistered.
-          *
-          * @pre Proxy must have something staked (existing row in voters table)
-          * @pre New state must be different than current state
-          */
-         [[eosio::action]]
-         void regproxy( const name& proxy, bool isproxy );
 
          /**
           * Set the blockchain parameters. By tunning these parameters a degree of
@@ -862,7 +824,6 @@ namespace eosiosystem {
          using unregprod_action = eosio::action_wrapper<"unregprod"_n, &system_contract::unregprod>;
          using voteproducer_action = eosio::action_wrapper<"voteproducer"_n, &system_contract::voteproducer>;
          // using voteupdate_action = eosio::action_wrapper<"voteupdate"_n, &system_contract::voteupdate>;
-         using regproxy_action = eosio::action_wrapper<"regproxy"_n, &system_contract::regproxy>;
          using claimrewards_action = eosio::action_wrapper<"claimrewards"_n, &system_contract::claimrewards>;
          using rmvproducer_action = eosio::action_wrapper<"rmvproducer"_n, &system_contract::rmvproducer>;
          using bidname_action = eosio::action_wrapper<"bidname"_n, &system_contract::bidname>;

@@ -840,14 +840,10 @@ public:
       return r;
    }
 
-   action_result vote( const account_name& voter, const std::vector<account_name>& producers, const account_name& proxy = name(0) ) {
+   action_result vote( const account_name& voter, const std::vector<account_name>& producers ) {
       return push_action(voter, "voteproducer"_n, mvo()
                          ("voter",     voter)
-                         ("proxy",     proxy)
                          ("producers", producers));
-   }
-   action_result vote( const account_name& voter, const std::vector<account_name>& producers, std::string_view proxy ) {
-      return vote( voter, producers, account_name(proxy) );
    }
 
    action_result addvote( const account_name& voter, const asset& vote_staked ) {
@@ -1154,7 +1150,6 @@ public:
          BOOST_REQUIRE_EQUAL(success(), buyram( "alice1111111"_n, "alice1111111"_n, core_sym::from_string("30000000.0000") ) );
          BOOST_REQUIRE_EQUAL(success(), push_action("alice1111111"_n, "voteproducer"_n, mvo()
                                                     ("voter",  "alice1111111")
-                                                    ("proxy", name(0).to_string())
                                                     ("producers", vector<account_name>(producer_names.begin(), producer_names.begin()+num_producers))
                              )
          );
@@ -1196,7 +1191,6 @@ public:
                                                vector<permission_level>{{"producer1111"_n, config::active_name}},
                                                mvo()
                                                ("voter", "producer1111")
-                                               ("proxy", name(0).to_string())
                                                ("producers", vector<account_name>(1, "producer1111"_n))
                                              )
                                  );
@@ -1231,8 +1225,6 @@ inline fc::mutable_variant_object voter( account_name acct ) {
       ("producers", variants() )
       ("staked", int64_t(0))
       //("last_vote_weight", double(0))
-      ("proxied_vote_weight", double(0))
-      ("is_proxy", 0)
       ;
 }
 inline fc::mutable_variant_object voter( std::string_view acct ) {
@@ -1251,10 +1243,6 @@ inline fc::mutable_variant_object voter( account_name acct, int64_t vote_stake )
 }
 inline fc::mutable_variant_object voter( std::string_view acct, int64_t vote_stake ) {
    return voter( account_name(acct), vote_stake );
-}
-
-inline fc::mutable_variant_object proxy( account_name acct ) {
-   return voter( acct )( "is_proxy", 1 );
 }
 
 inline uint64_t M( const string& eos_str ) {
