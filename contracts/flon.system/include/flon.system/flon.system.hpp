@@ -276,18 +276,6 @@ namespace eosiosystem {
       }
    };
 
-   // Defines new producer info structure to be stored in new producer info table, added after version 1.3.0
-   struct [[eosio::table, eosio::contract("flon.system")]] producer_info2 {
-      name            owner;
-      double          votepay_share = 0;
-      time_point      last_votepay_share_update;
-
-      uint64_t primary_key()const { return owner.value; }
-
-      // explicit serialization macro is not necessary, used here only to improve compilation time
-      EOSLIB_SERIALIZE( producer_info2, (owner)(votepay_share)(last_votepay_share_update) )
-   };
-
    // finalizer_key_info stores information about a finalizer key.
    struct [[eosio::table("finkeys"), eosio::contract("flon.system")]] finalizer_key_info {
       uint64_t          id;                   // automatically generated ID for the key in the table
@@ -411,8 +399,6 @@ namespace eosiosystem {
                                indexed_by<"prototalvote"_n, const_mem_fun<producer_info, uint64_t, &producer_info::by_votes>  >
                              > producers_table;
 
-   typedef eosio::multi_index< "producers2"_n, producer_info2 > producers_table2;
-
    typedef eosio::singleton< "global"_n, eosio_global_state >   global_state_singleton;
 
    struct [[eosio::table, eosio::contract("flon.system")]] vote_refund {
@@ -444,7 +430,6 @@ namespace eosiosystem {
       private:
          voters_table             _voters;
          producers_table          _producers;
-         producers_table2         _producers2;
          finalizer_keys_table     _finalizer_keys;
          finalizers_table         _finalizers;
          last_prop_fins_table     _last_prop_finalizers;

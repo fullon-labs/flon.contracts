@@ -29,7 +29,6 @@ namespace eosiosystem {
    :native(s,code,ds),
     _voters(get_self(), get_self().value),
     _producers(get_self(), get_self().value),
-    _producers2(get_self(), get_self().value),
     _finalizer_keys(get_self(), get_self().value),
     _finalizers(get_self(), get_self().value),
     _last_prop_finalizers(get_self(), get_self().value),

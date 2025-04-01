@@ -69,13 +69,6 @@ namespace eosiosystem {
                info.reward_shared_ratio = *reward_shared_ratio;
          });
 
-         auto prod2 = _producers2.find( producer.value );
-         if ( prod2 == _producers2.end() ) {
-            _producers2.emplace( producer, [&]( producer_info2& info ){
-               info.owner                     = producer;
-               info.last_votepay_share_update = ct;
-            });
-         }
       } else {
          _producers.emplace( producer, [&]( producer_info& info ){
             info.owner              = producer;
@@ -89,10 +82,6 @@ namespace eosiosystem {
             info.producer_authority = producer_authority;
             if (reward_shared_ratio)
                info.reward_shared_ratio = *reward_shared_ratio;
-         });
-         _producers2.emplace( producer, [&]( producer_info2& info ){
-            info.owner                     = producer;
-            info.last_votepay_share_update = ct;
          });
       }
 
