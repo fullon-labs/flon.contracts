@@ -220,15 +220,6 @@ namespace eosiosystem {
                         (total_producer_votepay_share)(revision) )
    };
 
-   // Defines new global state parameters added after version 1.3.0
-   struct [[eosio::table("global3"), eosio::contract("flon.system")]] eosio_global_state3 {
-      eosio_global_state3() { }
-      time_point        last_vpay_state_update;
-      double            total_vpay_share_change_rate = 0;
-
-      EOSLIB_SERIALIZE( eosio_global_state3, (last_vpay_state_update)(total_vpay_share_change_rate) )
-   };
-
    inline eosio::block_signing_authority convert_to_block_signing_authority( const eosio::public_key& producer_key ) {
       return eosio::block_signing_authority_v0{ .threshold = 1, .keys = {{producer_key, 1}} };
    }
@@ -440,8 +431,6 @@ namespace eosiosystem {
 
    typedef eosio::singleton< "global2"_n, eosio_global_state2 > global_state2_singleton;
 
-   typedef eosio::singleton< "global3"_n, eosio_global_state3 > global_state3_singleton;
-
    struct [[eosio::table, eosio::contract("flon.system")]] vote_refund {
       name            owner;
       time_point_sec  request_time;
@@ -479,10 +468,8 @@ namespace eosiosystem {
          fin_key_id_gen_table     _fin_key_id_generator;
          global_state_singleton   _global;
          global_state2_singleton  _global2;
-         global_state3_singleton  _global3;
          eosio_global_state       _gstate;
          eosio_global_state2      _gstate2;
-         eosio_global_state3      _gstate3;
 
       public:
          static constexpr eosio::name active_permission     = {"active"_n};
@@ -995,12 +982,6 @@ namespace eosiosystem {
          void update_elected_producers( const block_timestamp& timestamp );
          void update_producer_votes( const std::vector<name>& producers, int64_t votes_delta,
                                              bool is_adding);
-         void propagate_weight_change( const voter_info& voter );
-         double update_producer_votepay_share( const producers_table2::const_iterator& prod_itr,
-                                               const time_point& ct,
-                                               double shares_rate, bool reset_to_zero = false );
-         double update_total_votepay_share( const time_point& ct,
-                                            double additional_shares_delta = 0.0, double shares_rate_delta = 0.0 );
 
          // defined in finalizer_key.cpp
          bool is_savanna_consensus();

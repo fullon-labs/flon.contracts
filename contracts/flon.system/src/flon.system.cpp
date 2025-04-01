@@ -35,12 +35,10 @@ namespace eosiosystem {
     _last_prop_finalizers(get_self(), get_self().value),
     _fin_key_id_generator(get_self(), get_self().value),
     _global(get_self(), get_self().value),
-    _global2(get_self(), get_self().value),
-    _global3(get_self(), get_self().value),
+    _global2(get_self(), get_self().value)
    {
       _gstate  = _global.exists() ? _global.get() : get_default_parameters();
       _gstate2 = _global2.exists() ? _global2.get() : eosio_global_state2{};
-      _gstate3 = _global3.exists() ? _global3.get() : eosio_global_state3{};
    }
 
    eosio_global_state system_contract::get_default_parameters() {
@@ -57,8 +55,6 @@ namespace eosiosystem {
    system_contract::~system_contract() {
       _global.set( _gstate, get_self() );
       _global2.set( _gstate2, get_self() );
-      _global3.set( _gstate3, get_self() );
-      _global4.set( _gstate4, get_self() );
    }
 
    void system_contract::channel_to_system_fees( const name& from, const asset& amount ) {
