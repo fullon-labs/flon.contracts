@@ -19,7 +19,7 @@ using mvo = fc::mutable_variant_object;
 class eosio_msig_tester : public tester {
 public:
    eosio_msig_tester() {
-      create_accounts( { "flon.msig"_n, "flon.stake"_n, "flon.ram"_n, "flon.ramfee"_n, "flon.fees"_n, "alice"_n, "bob"_n, "carol"_n ,
+      create_accounts( { "flon.msig"_n, "flon.stake"_n, "flon.ram"_n, "flon.fees"_n, "alice"_n, "bob"_n, "carol"_n ,
                "flon.reward"_n, "flon.vote"_n } );
       produce_block();
 
@@ -437,7 +437,7 @@ BOOST_FIXTURE_TEST_CASE( update_system_contract_all_approve, eosio_msig_tester )
    create_currency( "flon.token"_n, config::system_account_name, core_sym::from_string("10000000000.0000") );
    issue(config::system_account_name, core_sym::from_string("1000000000.0000"));
    BOOST_REQUIRE_EQUAL( core_sym::from_string("1000000000.0000"),
-                        get_balance(config::system_account_name) + get_balance("flon.ramfee"_n) + get_balance("flon.stake"_n) + get_balance("flon.ram"_n) );
+                        get_balance(config::system_account_name) + get_balance("flon.stake"_n) + get_balance("flon.ram"_n) );
 
    set_code( config::system_account_name, contracts::system_wasm() );
    set_abi( config::system_account_name, contracts::system_abi().data() );
@@ -452,7 +452,7 @@ BOOST_FIXTURE_TEST_CASE( update_system_contract_all_approve, eosio_msig_tester )
    create_account_with_resources( "carol1111111"_n, "flon"_n, core_sym::from_string("1.0000"), false );
 
    BOOST_REQUIRE_EQUAL( core_sym::from_string("1000000000.0000"),
-                        get_balance(config::system_account_name) + get_balance("flon.ramfee"_n) + get_balance("flon.stake"_n)
+                        get_balance(config::system_account_name) + get_balance("flon.stake"_n)
                         + get_balance("flon.ram"_n) + get_balance("flon.fees"_n) );
 
    vector<permission_level> perm = { { "alice"_n, config::active_name }, { "bob"_n, config::active_name },
@@ -576,7 +576,7 @@ BOOST_FIXTURE_TEST_CASE( update_system_contract_major_approve, eosio_msig_tester
    create_account_with_resources( "carol1111111"_n, "flon"_n, core_sym::from_string("1.0000"), false );
 
    BOOST_REQUIRE_EQUAL( core_sym::from_string("1000000000.0000"),
-                        get_balance(config::system_account_name) + get_balance("flon.ramfee"_n) + get_balance("flon.stake"_n)
+                        get_balance(config::system_account_name) + get_balance("flon.stake"_n)
                         + get_balance("flon.ram"_n) + get_balance("flon.fees"_n) );
 
    vector<permission_level> perm = { { "alice"_n, config::active_name }, { "bob"_n, config::active_name },

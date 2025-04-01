@@ -516,7 +516,6 @@ namespace eosiosystem {
          static constexpr eosio::name active_permission     = {"active"_n};
          static constexpr eosio::name token_account         = {"flon.token"_n};
          static constexpr eosio::name gas_account           = {"flon.gas"_n};
-         static constexpr eosio::name ramfee_account        = {"flon.ramfee"_n};
          static constexpr eosio::name stake_account         = {"flon.stake"_n};
          static constexpr eosio::name vote_account          = {"flon.vote"_n};
          static constexpr eosio::name reward_account        = {"flon.reward"_n};
