@@ -325,12 +325,9 @@ namespace eosiosystem {
       int64_t             staked                = 0; /// staked of votes
       int64_t             votes                 = 0;  /// elected votes
       block_timestamp     last_unvoted_time;          /// vote updated time
+      uint8_t             revision              = 0; ///< used to track version updates in the future.
 
       uint64_t primary_key()const { return owner.value; }
-
-      // explicit serialization macro is not necessary, used here only to improve compilation time
-      EOSLIB_SERIALIZE( voter_info, (owner)(producers)(staked)
-                                    (votes)(last_unvoted_time) )
    };
 
 
