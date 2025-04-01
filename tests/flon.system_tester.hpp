@@ -1238,14 +1238,6 @@ public:
       }
    }
 
-   action_result setinflation( int64_t annual_rate, int64_t inflation_pay_factor, int64_t votepay_factor ) {
-      return push_action( "flon"_n, "setinflation"_n, mvo()
-               ("annual_rate",     annual_rate)
-               ("inflation_pay_factor", inflation_pay_factor)
-               ("votepay_factor", votepay_factor)
-      );
-   }
-
    action_result setpayfactor( int64_t inflation_pay_factor, int64_t votepay_factor ) {
       return push_action( "flon"_n, "setpayfactor"_n, mvo()
                ("inflation_pay_factor", inflation_pay_factor)
