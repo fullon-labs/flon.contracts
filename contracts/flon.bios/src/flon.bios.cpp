@@ -2,15 +2,8 @@
 #include <eosio/crypto_bls_ext.hpp>
 
 #include <unordered_set>
-#ifdef ENABLE_CONTRACT_VERSION
-#include <contract_version.hpp>
-#endif//ENABLE_CONTRACT_VERSION
 
 namespace eosiobios {
-
-#ifdef ENABLE_CONTRACT_VERSION
-DEFINE_VERSION_CONTRACT_CLASS("flon.bios", bios)
-#endif//ENABLE_CONTRACT_VERSION
 
 void bios::setabi( name account, const std::vector<char>& abi ) {
    abi_hash_table table(get_self(), get_self().value);
