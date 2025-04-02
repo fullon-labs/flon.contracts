@@ -62,7 +62,6 @@ ExternalProject_Add(
   UPDATE_COMMAND ""
   PATCH_COMMAND ""
   TEST_COMMAND ""
-  INSTALL_COMMAND ""
   BUILD_ALWAYS 1)
 
 # Actually install subproject.
