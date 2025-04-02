@@ -10,7 +10,7 @@ class [[eosio::contract(contract_name)]]                                        
 class_name : public eosio::contract {                                                   \
 public:                                                                                 \
     using contract::contract;                                                           \
-    [[eosio::action]] std::string version() {                                           \
+    [[eosio::action, eosio::read_only]] std::string version() {                                           \
         return CONTRACT_VERSION;                                                        \
     }                                                                                   \
     using version_action = eosio::action_wrapper<"version"_n, &class_name::version>;    \
