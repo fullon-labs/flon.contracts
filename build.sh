@@ -76,6 +76,10 @@ if [[ ${BUILD_TESTS} == true ]]; then
    export CMAKE_FRAMEWORK_PATH="${FLON_INSTALL_DIR}:${CMAKE_FRAMEWORK_PATH}"
 fi
 
+if [[ "${CMAKE_OPTIONS}" != "" ]]; then
+   echo "Using CMAKE_OPTIONS=${CMAKE_OPTIONS}"
+fi
+
 printf "\t=========== Building flon.contracts ===========\n\n"
 RED='\033[0;31m'
 NC='\033[0m'
