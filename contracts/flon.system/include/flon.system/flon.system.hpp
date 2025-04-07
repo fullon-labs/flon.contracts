@@ -141,6 +141,7 @@ namespace eosiosystem {
    * - Users can bid on premium names.
    */
 
+   #ifdef ENABLE_NAME_BID
    // A name bid, which consists of:
    // - a `newname` name that the bid is for
    // - a `high_bidder` account name that is the one with the highest bid so far
@@ -170,6 +171,7 @@ namespace eosiosystem {
                              > name_bid_table;
 
    typedef eosio::multi_index< "bidrefunds"_n, bid_refund > bid_refund_table;
+   #endif//ENABLE_NAME_BID
 
    // Defines new global state parameters.
    struct [[eosio::table("global"), eosio::contract("flon.system")]] eosio_global_state : eosio::blockchain_parameters {
@@ -757,6 +759,7 @@ namespace eosiosystem {
          void rmvproducer( const name& producer );
          #endif//ENABLE_VOTING_PRODUCER
 
+         #ifdef ENABLE_NAME_BID
          /**
           * Bid name action, allows an account `bidder` to place a bid for a name `newname`.
           * @param bidder - the account placing the bid,
@@ -784,6 +787,7 @@ namespace eosiosystem {
           */
          [[eosio::action]]
          void bidrefund( const name& bidder, const name& newname );
+         #endif//ENABLE_NAME_BID
 
          // /**
          //  * Config reward parameters
@@ -829,8 +833,10 @@ namespace eosiosystem {
          using claimrewards_action = eosio::action_wrapper<"claimrewards"_n, &system_contract::claimrewards>;
          using rmvproducer_action = eosio::action_wrapper<"rmvproducer"_n, &system_contract::rmvproducer>;
          #endif//ENABLE_VOTING_PRODUCER
+         #ifdef ENABLE_NAME_BID
          using bidname_action = eosio::action_wrapper<"bidname"_n, &system_contract::bidname>;
          using bidrefund_action = eosio::action_wrapper<"bidrefund"_n, &system_contract::bidrefund>;
+         #endif//ENABLE_NAME_BID
          using setpriv_action = eosio::action_wrapper<"setpriv"_n, &system_contract::setpriv>;
          using setalimits_action = eosio::action_wrapper<"setalimits"_n, &system_contract::setalimits>;
          using setparams_action = eosio::action_wrapper<"setparams"_n, &system_contract::setparams>;

@@ -239,6 +239,7 @@ namespace eosiosystem {
            tmp >>= 5;
          }
          if( has_dot ) { // or is less than 12 characters
+            #ifdef ENABLE_NAME_BID
             auto suffix = new_account_name.suffix();
             if( suffix == new_account_name ) {
                name_bid_table bids(get_self(), get_self().value);
@@ -250,6 +251,9 @@ namespace eosiosystem {
             } else {
                check( creator == suffix, "only suffix may create this account" );
             }
+            #else
+            check(false, "name bid not supported");
+            #endif//ENABLE_NAME_BID
          }
       }
 

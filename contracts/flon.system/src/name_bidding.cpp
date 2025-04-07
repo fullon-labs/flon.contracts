@@ -7,7 +7,7 @@ namespace eosiosystem {
 
    using eosio::current_time_point;
    using eosio::token;
-
+   #ifdef ENABLE_NAME_BID
    void system_contract::bidname( const name& bidder, const name& newname, const asset& bid ) {
       require_auth( bidder );
       check( newname.suffix() == newname, "you can only bid on top-level suffix" );
@@ -66,5 +66,6 @@ namespace eosiosystem {
       transfer_act.send( names_account, bidder, asset(it->amount), std::string("refund bid on name ")+(name{newname}).to_string() );
       refunds_table.erase( it );
    }
+   #endif//ENABLE_NAME_BID
 
 }
