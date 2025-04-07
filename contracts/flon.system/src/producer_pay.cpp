@@ -33,6 +33,7 @@ namespace eosiosystem {
       // Add latest block information to blockinfo table.
       add_to_blockinfo_table(previous_block_id, timestamp);
 
+      #ifdef ENABLE_VOTING_PRODUCER
       /** check producer reward started */
       if( _gstate.election_activated_time == time_point() || timestamp < _gstate.election_activated_time )
          return;
@@ -82,11 +83,13 @@ namespace eosiosystem {
             }
          }
       }
+      #endif//ENABLE_VOTING_PRODUCER
    }
 
+   #ifdef ENABLE_VOTING_PRODUCER
    void system_contract::claimrewards( const name& owner ) {
       require_auth( owner );
-      check(false, "unsupport claimrewards");
+      check(false, "unsupport claimrewards currently");
    }
 
    void system_contract::cfgelection( const time_point& election_activated_time, const time_point& reward_started_time, const asset& initial_rewards_per_block) {
@@ -118,4 +121,5 @@ namespace eosiosystem {
 
       _gstate.initial_rewards_per_block = initial_rewards_per_block;
    }
+   #endif//ENABLE_VOTING_PRODUCER
 } //namespace eosiosystem

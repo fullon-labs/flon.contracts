@@ -27,6 +27,7 @@ namespace eosiosystem {
    using eosio::singleton;
    using std::to_string;
 
+   #ifdef ENABLE_VOTING_PRODUCER
    void system_contract::register_producer(  const name& producer,
                                              const block_signing_authority& producer_authority,
                                              const string& url,
@@ -370,4 +371,5 @@ namespace eosiosystem {
       vote_refund_tbl.erase( itr );
    }
 
+   #endif//ENABLE_VOTING_PRODUCER
 } /// namespace eosiosystem

@@ -3,6 +3,7 @@
 #include <eosio/eosio.hpp>
 
 namespace eosiosystem {
+   #ifdef ENABLE_VOTING_PRODUCER
    finalizer_auth_info::finalizer_auth_info(const finalizer_info& finalizer)
       : key_id(finalizer.active_key_id)
       , fin_authority( eosio::finalizer_authority{
@@ -325,4 +326,5 @@ namespace eosiosystem {
       // Remove the key from finalizer_keys table
       idx.erase( fin_key_itr );
    }
+   #endif//ENABLE_VOTING_PRODUCER
 } /// namespace eosiosystem

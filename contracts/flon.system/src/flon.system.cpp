@@ -21,18 +21,16 @@ namespace eosiosystem {
    DEFINE_VERSION_CONTRACT_CLASS("flon.system", system_contract)
    #endif//ENABLE_CONTRACT_VERSION
 
-   double get_continuous_rate(int64_t annual_rate) {
-      return std::log1p(double(annual_rate)/double(100*inflation_precision));
-   }
-
    system_contract::system_contract( name s, name code, datastream<const char*> ds )
    :native(s,code,ds),
+   #ifdef ENABLE_VOTING_PRODUCER
     _voters(get_self(), get_self().value),
     _producers(get_self(), get_self().value),
     _finalizer_keys(get_self(), get_self().value),
     _finalizers(get_self(), get_self().value),
     _last_prop_finalizers(get_self(), get_self().value),
     _fin_key_id_generator(get_self(), get_self().value),
+   #endif//ENABLE_VOTING_PRODUCER
     _global(get_self(), get_self().value)
    {
       _gstate  = _global.exists() ? _global.get() : get_default_parameters();
@@ -205,6 +203,7 @@ namespace eosiosystem {
       require_auth( get_self() );
    }
 
+   #ifdef ENABLE_VOTING_PRODUCER
    void system_contract::rmvproducer( const name& producer ) {
       require_auth( get_self() );
       auto prod = _producers.find( producer.value );
@@ -213,6 +212,7 @@ namespace eosiosystem {
             p.deactivate();
          });
    }
+   #endif//ENABLE_VOTING_PRODUCER
 
    /**
     *  Called after a new account is created. This code enforces resource-limits rules
