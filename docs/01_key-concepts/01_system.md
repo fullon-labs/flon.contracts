@@ -17,6 +17,4 @@ As you just learned the relation between a `system account` and a `system contra
 |flon.names|No|No|The account which is holding funds from namespace auctions.|
 |flon.prods|No|No|The account representing the union of all current active block producers permissions.|
 |flon.ram|No|No|The account that keeps track of the EOS balances based on users actions of buying or selling RAM.|
-|flon.saving|No|No|The account which holds the 4% of network inflation.|
 |flon.stake|No|No|The account that keeps track of all EOS tokens which have been staked for voting.|
-|flon.vpay|No|No|The account that pays the block producers accordingly with the votes won. It assigns 0.75% of inflation based on the amount of votes a block producer won in the last 24 hours.|

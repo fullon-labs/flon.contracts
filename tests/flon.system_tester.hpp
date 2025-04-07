@@ -50,7 +50,7 @@ public:
       produce_block();
 
       create_accounts({ "flon.token"_n, "flon.ram"_n, "flon.stake"_n,
-               "flon.vpay"_n, "flon.saving"_n, "flon.names"_n, "flon.fees"_n,
+               "flon.names"_n, "flon.fees"_n,
                "flon.reward"_n, "flon.vote"_n });
 
 
