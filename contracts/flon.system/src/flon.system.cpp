@@ -23,6 +23,7 @@ namespace eosiosystem {
 
    system_contract::system_contract( name s, name code, datastream<const char*> ds )
    :native(s,code,ds),
+   // _users(get_self(), get_self().value),
    #ifdef ENABLE_VOTING_PRODUCER
     _voters(get_self(), get_self().value),
     _producers(get_self(), get_self().value),
@@ -258,7 +259,11 @@ namespace eosiosystem {
       }
 
       // TODO: new user table
-      // user_resources_table  userres( get_self(), new_account_name.value );
+      users_table  users( get_self(), get_self().value );
+      users.emplace( new_account_name, [&]( auto& u ) {
+         u.owner     = new_account_name;
+         u.creator   = creator;
+       });
 
       // make sure the new account is resource limited.
       set_resource_limits( new_account_name, 0, false );

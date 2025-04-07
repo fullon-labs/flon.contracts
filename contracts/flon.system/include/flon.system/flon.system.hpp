@@ -207,6 +207,20 @@ namespace eosiosystem {
       return eosio::block_signing_authority_v0{ .threshold = 1, .keys = {{producer_key, 1}} };
    }
 
+   // User account information about:
+   // Scope is current contract account
+   // - `owner` the user account name
+   // - `creator` the creator account name
+   struct [[eosio::table, eosio::contract("flon.system")]] user_account {
+      name                 owner;                     /// the user account name
+      name                 creator;                   /// the creator account name
+      uint8_t              revision              = 0; ///< used to track version updates in the future.
+
+      uint64_t primary_key()const { return owner.value; }
+   };
+
+   typedef eosio::multi_index< "users"_n, user_account >  users_table;
+
    #ifdef ENABLE_VOTING_PRODUCER
    // Defines `producer_info` structure to be stored in `producer_info` table, added after version 1.0
    struct [[eosio::table, eosio::contract("flon.system")]] producer_info {
@@ -322,7 +336,6 @@ namespace eosiosystem {
    struct [[eosio::table, eosio::contract("flon.system")]] voter_info {
       name                owner;     /// the voter
       std::vector<name>   producers; /// the producers approved by this voter
-      int64_t             staked                = 0; /// staked of votes
       int64_t             votes                 = 0;  /// elected votes
       block_timestamp     last_unvoted_time;          /// vote updated time
       uint8_t             revision              = 0; ///< used to track version updates in the future.
@@ -368,6 +381,7 @@ namespace eosiosystem {
    class [[eosio::contract("flon.system")]] system_contract : public native {
 
       private:
+         // users_table             _users;
       #ifdef ENABLE_VOTING_PRODUCER
          voters_table             _voters;
          producers_table          _producers;
