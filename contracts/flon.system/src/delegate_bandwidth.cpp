@@ -39,6 +39,7 @@ namespace eosiosystem {
       check( quant.symbol == core_symbol(), "must buy gas with core asset" );
       check( quant.amount > 0, "must purchase a positive amount" );
       check( is_account(receiver), "receiver account not exists" );
+      check( payer != gas_account && receiver != gas_account, "neither payer nor receiver can be system gas account" );
       // TODO: limit the max quant?
 
       //TODO: fee of buygas?
