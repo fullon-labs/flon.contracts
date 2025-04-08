@@ -2,10 +2,10 @@ cmake_minimum_required(VERSION 3.5)
 
 project(eosio_contracts)
 
-set(VERSION_MAJOR 3)
-set(VERSION_MINOR 6)
+set(VERSION_MAJOR 0)
+set(VERSION_MINOR 3)
 set(VERSION_PATCH 0)
-# set(VERSION_SUFFIX "")
+set(VERSION_SUFFIX "alpha")
 
 if(VERSION_SUFFIX)
   set(VERSION_FULL "${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_PATCH}-${VERSION_SUFFIX}")
