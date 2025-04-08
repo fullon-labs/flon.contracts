@@ -16,7 +16,10 @@ if(NOT "${CONTRACT_COMPILE_OPTIONS_FILE}" STREQUAL "")
   add_compile_options("${CONTRACT_COMPILE_OPTIONS}")
 endif()
 
-add_compile_definitions(ENABLE_CONTRACT_VERSION)
+if(NOT "${CONTRACT_VERSION_DIR}" STREQUAL "")
+  include_directories(${CONTRACT_VERSION_DIR})
+  add_compile_definitions(ENABLE_CONTRACT_VERSION)
+endif()
 
 set(CDT_VERSION_MIN "0.3")
 set(CDT_VERSION_SOFT_MAX "1.0")
@@ -51,8 +54,6 @@ set(RESOURCE_ICON_URI "resource.png#3830f1ce8cb07f7757dbcf383b1ec1b11914ac34a1f9
 set(TOKEN_ICON_URI "token.png#207ff68b0406eaa56618b08bda81d6a0954543f36adc328ab3065f31a5c5d654")
 set(TRANSFER_ICON_URI "transfer.png#5dfad0df72772ee1ccc155e670c1d124f5c5122f1d5027565df38b418042d1dd")
 set(VOTING_ICON_URI "voting.png#db28cd3db6e62d4509af3644ce7d377329482a14bb4bfaca2aa5f1400d8e8a84")
-
-include_directories(${CONTRACT_VERSION_DIR})
 
 add_subdirectory(flon.bios)
 add_subdirectory(flon.boot)

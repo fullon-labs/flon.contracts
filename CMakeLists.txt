@@ -13,7 +13,6 @@ else()
   set(VERSION_FULL "${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_PATCH}")
 endif()
 
-
 message(STATUS "Updating version metadata, VERSION_FULL=${VERSION_FULL}")
 add_custom_target(
    update_version ALL
@@ -23,7 +22,6 @@ add_custom_target(
                             -DDEST_VERION_FILE=${CMAKE_BINARY_DIR}/version/contract_version.hpp
                             -P ${CMAKE_SOURCE_DIR}/version/VersionUtils.cmake
    COMMENT "Updating version metadata..." VERBATIM )
-set(CONTRACT_VERSION_FILE ${CMAKE_BINARY_DIR}/version/ContractVersion.cmake)
 
 message(STATUS "Building eos-system-contracts v${VERSION_FULL}")
 
