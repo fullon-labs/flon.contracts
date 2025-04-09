@@ -51,15 +51,6 @@ namespace eosio {
          void issue( const name& to, const asset& quantity, const string& memo );
 
          /**
-          * Set the maximum supply of the token.
-          *
-          * @param issuer - the issuer account setting the maximum supply.
-          * @param maximum_supply - the maximum supply of the token.
-          */
-         [[eosio::action]]
-         void setmaxsupply( const name& issuer, const asset& maximum_supply );
-
-         /**
           * The opposite for create action, if all validations succeed,
           * it debits the statstable.supply amount.
           *
@@ -138,7 +129,6 @@ namespace eosio {
          using transfer_action = eosio::action_wrapper<"transfer"_n, &token::transfer>;
          using open_action = eosio::action_wrapper<"open"_n, &token::open>;
          using close_action = eosio::action_wrapper<"close"_n, &token::close>;
-         using setmaxsupply_action = eosio::action_wrapper<"setmaxsupply"_n, &token::setmaxsupply>;
 
          struct [[eosio::table]] account {
             asset    balance;

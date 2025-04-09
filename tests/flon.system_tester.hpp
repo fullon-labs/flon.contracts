@@ -971,13 +971,6 @@ public:
                                 );
    }
 
-   void setmaxsupply( const asset& maximum_supply, const name& issuer = config::system_account_name) {
-      base_tester::push_action( "flon.token"_n, "setmaxsupply"_n, issuer, mutable_variant_object()
-                                ("issuer",       issuer )
-                                ("maximum_supply", maximum_supply )
-                                );
-   }
-
    void transfer( const name& from, const name& to, const asset& amount, const name& manager = config::system_account_name ) {
       base_tester::push_action( "flon.token"_n, "transfer"_n, manager, mutable_variant_object()
                                 ("from",    from)
