@@ -971,14 +971,6 @@ public:
                                 );
    }
 
-   void issuefixed( const asset& supply, const name& to = config::system_account_name ) {
-      base_tester::push_action( "flon.token"_n, "issuefixed"_n, to, mutable_variant_object()
-                                ("to",       to )
-                                ("supply", supply )
-                                ("memo",     "")
-                                );
-   }
-
    void setmaxsupply( const asset& maximum_supply, const name& issuer = config::system_account_name) {
       base_tester::push_action( "flon.token"_n, "setmaxsupply"_n, issuer, mutable_variant_object()
                                 ("issuer",       issuer )
