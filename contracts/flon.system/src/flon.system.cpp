@@ -58,6 +58,39 @@ namespace eosiosystem {
    }
 
 #ifdef SYSTEM_BLOCKCHAIN_PARAMETERS
+
+   //order must match parameters as ids are used in serialization
+   enum chain_config_params_v0 {
+      max_block_net_usage_id,
+      target_block_net_usage_pct_id,
+      max_transaction_net_usage_id,
+      base_per_transaction_net_usage_id,
+      net_usage_leeway_id,
+      context_free_discount_net_usage_num_id,
+      context_free_discount_net_usage_den_id,
+      max_block_cpu_usage_id,
+      target_block_cpu_usage_pct_id,
+      max_transaction_cpu_usage_id,
+      min_transaction_cpu_usage_id,
+      max_transaction_lifetime_id,
+      deferred_trx_expiration_window_id,
+      max_transaction_delay_id,
+      max_inline_action_size_id,
+      max_inline_action_depth_id,
+      max_authority_depth_id,
+      max_total_ram_usage_id,
+      gas_per_cpu_ms_id,
+      gas_per_net_kb_id,
+      gas_per_ram_kb_id,
+      CHAIN_CONFIG_PARAMS_V0_COUNT
+   };
+
+
+   enum chain_config_params_v1 {
+      max_action_return_value_size_id = CHAIN_CONFIG_PARAMS_V0_COUNT,
+      CHAIN_CONFIG_PARAMS_V1_COUNT
+   };
+
    extern "C" [[eosio::wasm_import]] void set_parameters_packed(const void*, size_t);
 #endif
 
@@ -69,33 +102,38 @@ namespace eosiosystem {
       set_blockchain_parameters( params );
 #else
       constexpr size_t param_count = 18;
+      static_assert(CHAIN_CONFIG_PARAMS_V0_COUNT > 1);
       // an upper bound on the serialized size
-      char buf[1 + sizeof(params) + param_count];
+      char buf[1 + sizeof(params) + CHAIN_CONFIG_PARAMS_V0_COUNT];
       datastream<char*> stream(buf, sizeof(buf));
 
-      stream << uint8_t(17);
-      stream << uint8_t(0) << params.max_block_net_usage
-             << uint8_t(1) << params.target_block_net_usage_pct
-             << uint8_t(2) << params.max_transaction_net_usage
-             << uint8_t(3) << params.base_per_transaction_net_usage
-             << uint8_t(4) << params.net_usage_leeway
-             << uint8_t(5) << params.context_free_discount_net_usage_num
-             << uint8_t(6) << params.context_free_discount_net_usage_den
+      stream << uint8_t(CHAIN_CONFIG_PARAMS_V0_COUNT);
+      stream << uint8_t(max_block_net_usage_id)                   << params.max_block_net_usage
+             << uint8_t(target_block_net_usage_pct_id)            << params.target_block_net_usage_pct
+             << uint8_t(max_transaction_net_usage_id)             << params.max_transaction_net_usage
+             << uint8_t(base_per_transaction_net_usage_id)        << params.base_per_transaction_net_usage
+             << uint8_t(net_usage_leeway_id)                      << params.net_usage_leeway
+             << uint8_t(context_free_discount_net_usage_num_id)   << params.context_free_discount_net_usage_num
+             << uint8_t(context_free_discount_net_usage_den_id)   << params.context_free_discount_net_usage_den
 
-             << uint8_t(7) << params.max_block_cpu_usage
-             << uint8_t(8) << params.target_block_cpu_usage_pct
-             << uint8_t(9) << params.max_transaction_cpu_usage
-             << uint8_t(10) << params.min_transaction_cpu_usage
+             << uint8_t(max_block_cpu_usage_id)                   << params.max_block_cpu_usage
+             << uint8_t(target_block_cpu_usage_pct_id)            << params.target_block_cpu_usage_pct
+             << uint8_t(max_transaction_cpu_usage_id)             << params.max_transaction_cpu_usage
+             << uint8_t(min_transaction_cpu_usage_id)             << params.min_transaction_cpu_usage
 
-             << uint8_t(11) << params.max_transaction_lifetime
-             << uint8_t(12) << params.deferred_trx_expiration_window
-             << uint8_t(13) << params.max_transaction_delay
-             << uint8_t(14) << params.max_inline_action_size
-             << uint8_t(15) << params.max_inline_action_depth
-             << uint8_t(16) << params.max_authority_depth;
+             << uint8_t(max_transaction_lifetime_id)              << params.max_transaction_lifetime
+             << uint8_t(deferred_trx_expiration_window_id)        << params.deferred_trx_expiration_window
+             << uint8_t(max_transaction_delay_id)                 << params.max_transaction_delay
+             << uint8_t(max_inline_action_size_id)                << params.max_inline_action_size
+             << uint8_t(max_inline_action_depth_id)               << params.max_inline_action_depth
+             << uint8_t(max_authority_depth_id)                   << params.max_authority_depth
+             << uint8_t(max_total_ram_usage_id)                   << params.max_total_ram_usage
+             << uint8_t(gas_per_cpu_ms_id)                        << params.gas_per_cpu_ms
+             << uint8_t(gas_per_net_kb_id)                        << params.gas_per_net_kb
+             << uint8_t(gas_per_ram_kb_id)                        << params.gas_per_ram_kb;
       if(params.max_action_return_value_size)
       {
-         stream << uint8_t(17) << params.max_action_return_value_size.value();
+         stream << uint8_t(max_action_return_value_size_id)       << params.max_action_return_value_size.value();
          ++buf[0];
       }
 
