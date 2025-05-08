@@ -371,5 +371,12 @@ namespace eosiosystem {
       vote_refund_tbl.erase( itr );
    }
 
+   #else
+
+   void system_contract::setprods( const std::vector<eosio::producer_authority>& schedule ) {
+      require_auth( get_self() );
+      set_proposed_producers( schedule );
+   }
+
    #endif//ENABLE_VOTING_PRODUCER
 } /// namespace eosiosystem

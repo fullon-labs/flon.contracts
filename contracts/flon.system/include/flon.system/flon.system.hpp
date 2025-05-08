@@ -715,6 +715,19 @@ namespace eosiosystem {
           */
          [[eosio::action]]
          void subvote( const name& voter, const asset& vote_staked );
+         #else
+
+         /**
+          * Set producers action, sets a new list of active producers, by proposing a schedule change, once the block that
+          * contains the proposal becomes irreversible, the schedule is promoted to "pending"
+          * automatically. Once the block that promotes the schedule is irreversible, the schedule will
+          * become "active".
+          *
+          * @param schedule - New list of active producers to set
+          */
+         [[eosio::action]]
+         void setprods( const std::vector<eosio::producer_authority>& schedule );
+
          #endif//ENABLE_VOTING_PRODUCER
 
          /**
