@@ -400,7 +400,9 @@ namespace eosiosystem {
          static constexpr eosio::name gas_account           = {"flon.gas"_n};
          static constexpr eosio::name stake_account         = {"flon.stake"_n};
          static constexpr eosio::name vote_account          = {"flon.vote"_n};
+         #ifdef ENABLE_VOTING_PRODUCER
          static constexpr eosio::name reward_account        = {"flon.reward"_n};
+         #endif//ENABLE_VOTING_PRODUCER
          static constexpr eosio::name names_account         = {"flon.names"_n};
          static constexpr eosio::name fees_account          = {"flon.fees"_n};
          static constexpr eosio::name null_account          = {"flon.null"_n};

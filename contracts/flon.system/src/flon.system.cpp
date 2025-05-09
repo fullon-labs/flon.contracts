@@ -344,8 +344,10 @@ namespace eosiosystem {
       token::open_action open_act{ token_account, { {get_self(), active_permission} } };
       open_act.send( gas_account, core, get_self() );
 
+      #ifdef ENABLE_VOTING_PRODUCER
       flon::flon_reward::init_action init_act{ reward_account, { {get_self(), active_permission} } };
       init_act.send( core );
+      #endif//ENABLE_VOTING_PRODUCER
    }
 
 } /// flon.system
