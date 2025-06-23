@@ -1,27 +1,27 @@
 cmake_minimum_required(VERSION 3.5)
 
-set(EOSIO_VERSION_MIN "1.0")
-set(EOSIO_VERSION_SOFT_MAX "1.0")
-# set(EOSIO_VERSION_HARD_MAX "")
+set(CHAIN_CORE_VERSION_MIN "0.5")
+set(CHAIN_CORE_VERSION_SOFT_MAX "1.0")
+# set(CHAIN_CORE_VERSION_HARD_MAX "")
 
-find_package(fullon)
+find_package(flon-core REQUIRED)
 
 # Check the version of fullon
-if(SYSTEM_ENABLE_FULLON_VERSION_CHECK)
+if(SYSTEM_ENABLE_CHAIN_CORE_VERSION_CHECK)
   set(VERSION_MATCH_ERROR_MSG "")
-  eosio_check_version(VERSION_OUTPUT "${EOSIO_VERSION}" "${EOSIO_VERSION_MIN}" "${EOSIO_VERSION_SOFT_MAX}"
-                      "${EOSIO_VERSION_HARD_MAX}" VERSION_MATCH_ERROR_MSG)
+  chain_core_check_version(VERSION_OUTPUT "${CHAIN_CORE_VERSION}" "${CHAIN_CORE_VERSION_MIN}" "${CHAIN_CORE_VERSION_SOFT_MAX}"
+                      "${CHAIN_CORE_VERSION_HARD_MAX}" VERSION_MATCH_ERROR_MSG)
   if(VERSION_OUTPUT STREQUAL "MATCH")
-    message(STATUS "Using fullon version ${EOSIO_VERSION}")
+    message(STATUS "Using chain core version ${CHAIN_CORE_VERSION}")
   elseif(VERSION_OUTPUT STREQUAL "WARN")
     message(
       WARNING
-        "Using fullon version ${EOSIO_VERSION} even though it exceeds the maximum supported version of ${EOSIO_VERSION_SOFT_MAX}; continuing with configuration, however build may fail.\nIt is recommended to use fullon version ${EOSIO_VERSION_SOFT_MAX}.x"
+        "Using chain core version ${CHAIN_CORE_VERSION} even though it exceeds the maximum supported version of ${CHAIN_CORE_VERSION_SOFT_MAX}; continuing with configuration, however build may fail.\nIt is recommended to use chain core version ${CHAIN_CORE_VERSION_SOFT_MAX}.x"
     )
   else() # INVALID OR MISMATCH
     message(
       FATAL_ERROR
-        "Found fullon version ${EOSIO_VERSION} but it does not satisfy version requirements: ${VERSION_MATCH_ERROR_MSG}\nPlease use fullon version ${EOSIO_VERSION_SOFT_MAX}.x"
+        "Found chain core version ${CHAIN_CORE_VERSION} but it does not satisfy version requirements: ${VERSION_MATCH_ERROR_MSG}\nPlease use chain core version ${CHAIN_CORE_VERSION_SOFT_MAX}.x"
     )
   endif(VERSION_OUTPUT STREQUAL "MATCH")
 endif()
@@ -34,7 +34,7 @@ include(CTest) # eliminates DartConfiguration.tcl errors at test runtime
 enable_testing()
 # build unit test executable
 file(GLOB UNIT_TESTS "*.cpp" "*.hpp") # find all unit test suites
-add_eosio_test_executable(unit_test ${UNIT_TESTS}) # build unit tests as one executable
+add_chain_core_test_executable(unit_test ${UNIT_TESTS}) # build unit tests as one executable
 # mark test suites for execution
 foreach(TEST_SUITE ${UNIT_TESTS}) # create an independent target for each test suite
   execute_process(

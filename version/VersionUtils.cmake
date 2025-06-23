@@ -32,4 +32,4 @@ if(GIT_FOUND)
    endif()
 endif()
 
-configure_file( "${SRC_VERION_FILE}" "${DEST_VERION_FILE}" @ONLY )
+configure_file( "${SRC_VERSION_FILE}" "${DEST_VERSION_FILE}" @ONLY )
