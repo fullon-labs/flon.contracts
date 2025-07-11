@@ -309,3 +309,14 @@ At the time of voting the full weight of voter’s staked (CPU + NET) tokens wil
 
 At the time of voting the full weight of voter’s staked (CPU + NET) tokens will be cast towards each of the above producers.
 {{/if}}
+
+<h1 class="contract">setprodconf</h1>
+
+---
+spec_version: "0.2.0"
+title: Set producing configuration
+summary: '{{nowrap producer}} sets the producing configuration'
+icon: @ICON_BASE_URL@/@ADMIN_ICON_URI@
+---
+
+Set the producing configuration. The configuration includes parameters such as the idle block interval and other production-related settings.

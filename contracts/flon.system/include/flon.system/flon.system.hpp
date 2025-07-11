@@ -368,6 +368,16 @@ namespace eosiosystem {
    typedef eosio::multi_index< "voterefund"_n, vote_refund >      vote_refund_table;
    #endif//ENABLE_VOTING_PRODUCER
 
+
+   // Defines new global state parameters.
+   struct [[eosio::table("prodconf"), eosio::contract("flon.system")]] producing_config {
+
+      uint64_t             idle_block_interval_ms = 0;         ///< idle block interval in milliseconds, 0 means disable idle block
+   };
+
+
+   typedef eosio::singleton< "prodconf"_n, producing_config >   producing_config_singleton;
+
    /**
     * The `flon.system` smart contract is provided by `block.one` as a sample system contract, and it defines the structures and actions needed for blockchain's core functionality.
     *
@@ -844,6 +854,14 @@ namespace eosiosystem {
          [[eosio::action]]
          void limitauthchg( const name& account, const std::vector<name>& allow_perms, const std::vector<name>& disallow_perms );
 
+         /**
+          * Set producing configuration
+          *
+          * @param idle_block_interval_ms - the idle block interval in milliseconds. 0 means disable idle block.
+          */
+         [[eosio::action]]
+         void setprodconf( uint64_t idle_block_interval_ms );
+
          using init_action = eosio::action_wrapper<"init"_n, &system_contract::init>;
          using activate_action = eosio::action_wrapper<"activate"_n, &system_contract::activate>;
          using logsystemfee_action = eosio::action_wrapper<"logsystemfee"_n, &system_contract::logsystemfee>;
@@ -865,6 +883,7 @@ namespace eosiosystem {
          using setalimits_action = eosio::action_wrapper<"setalimits"_n, &system_contract::setalimits>;
          using setparams_action = eosio::action_wrapper<"setparams"_n, &system_contract::setparams>;
          // using cfgreward_action = eosio::action_wrapper<"cfgreward"_n, &system_contract::cfgreward>;
+         using setprodconf_action = eosio::action_wrapper<"setprodconf"_n, &system_contract::setprodconf>;
 
       private:
          // Implementation details:

@@ -351,4 +351,14 @@ namespace eosiosystem {
       #endif//ENABLE_VOTING_PRODUCER
    }
 
+
+   void system_contract::setprodconf( uint64_t idle_block_interval_ms ) {
+      require_auth( get_self() );
+
+      producing_config_singleton pcs(get_self(), get_self().value);
+      producing_config conf = pcs.get_or_default();
+      check( conf.idle_block_interval_ms != idle_block_interval_ms, "idle block interval is not changed" );
+      conf.idle_block_interval_ms = idle_block_interval_ms;
+      pcs.set( conf, get_self() );
+   }
 } /// flon.system
