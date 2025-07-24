@@ -860,7 +860,7 @@ namespace eosiosystem {
           * @param idle_block_interval_ms - the idle block interval in milliseconds. 0 means disable idle block.
           */
          [[eosio::action]]
-         void setprodconf( uint64_t idle_block_interval_ms );
+         void setibintervl( uint64_t idle_block_interval_ms );
 
          using init_action = eosio::action_wrapper<"init"_n, &system_contract::init>;
          using activate_action = eosio::action_wrapper<"activate"_n, &system_contract::activate>;
@@ -883,7 +883,7 @@ namespace eosiosystem {
          using setalimits_action = eosio::action_wrapper<"setalimits"_n, &system_contract::setalimits>;
          using setparams_action = eosio::action_wrapper<"setparams"_n, &system_contract::setparams>;
          // using cfgreward_action = eosio::action_wrapper<"cfgreward"_n, &system_contract::cfgreward>;
-         using setprodconf_action = eosio::action_wrapper<"setprodconf"_n, &system_contract::setprodconf>;
+         using setibintervl_action = eosio::action_wrapper<"setibintervl"_n, &system_contract::setibintervl>;
 
       private:
          // Implementation details:

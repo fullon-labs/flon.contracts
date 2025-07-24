@@ -310,7 +310,7 @@ At the time of voting the full weight of voter’s staked (CPU + NET) tokens wil
 At the time of voting the full weight of voter’s staked (CPU + NET) tokens will be cast towards each of the above producers.
 {{/if}}
 
-<h1 class="contract">setprodconf</h1>
+<h1 class="contract">setibintervl</h1>
 
 ---
 spec_version: "0.2.0"
