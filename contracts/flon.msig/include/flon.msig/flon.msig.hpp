@@ -119,7 +119,7 @@ namespace eosio {
 
       uint64_t primary_key()const { return proposal_name.value; }
    };
-   typedef eosio::multi_index< "proposal"_n, proposal > proposals;
+   typedef eosio::multi_index< "proposals"_n, proposal > proposals;
 
    struct approval {
       permission_level level;
