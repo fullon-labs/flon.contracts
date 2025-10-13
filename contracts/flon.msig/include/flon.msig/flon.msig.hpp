@@ -121,13 +121,6 @@ namespace eosio {
    };
    typedef eosio::multi_index< "proposal"_n, proposal > proposals;
 
-   struct [[eosio::table, eosio::contract("flon.msig")]] old_approvals_info {
-      name                            proposal_name;
-      std::vector<permission_level>   requested_approvals;
-      std::vector<permission_level>   provided_approvals;
-      uint64_t primary_key()const { return proposal_name.value; }
-   };
-   typedef eosio::multi_index< "approvals"_n, old_approvals_info > old_approvals;
    struct approval {
       permission_level level;
       time_point       time;
@@ -143,7 +136,7 @@ namespace eosio {
       std::vector<approval>   provided_approvals;
       uint64_t primary_key()const { return proposal_name.value; }
    };
-   typedef eosio::multi_index< "approvals2"_n, approvals_info > approvals;
+   typedef eosio::multi_index< "approvals"_n, approvals_info > approvals;
 
    struct [[eosio::table, eosio::contract("flon.msig")]] invalidation {
          name         account;

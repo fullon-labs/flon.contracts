@@ -34,16 +34,6 @@ std::vector<permission_level> get_approvals_and_adjust_table(name self, name pro
          }
       }
       table_op( approval_table, approval_table_iter );
-   } else {
-      multisig::old_approvals old_approval_table( self, proposer.value );
-      const auto& old_approvals_obj = old_approval_table.get( proposal_name.value, "proposal not found" );
-      for ( const auto& permission : old_approvals_obj.provided_approvals ) {
-         auto iter = invalidations_table.find( permission.actor.value );
-         if ( iter == invalidations_table.end() ) {
-            approvals_vector.push_back( permission );
-         }
-      }
-      table_op( old_approval_table, old_approvals_obj );
    }
    return approvals_vector;
 }
@@ -120,17 +110,6 @@ void multisig::approve( name proposer, name proposal_name, permission_level leve
             a.provided_approvals.push_back( approval{ level, current_time_point() } );
             a.requested_approvals.erase( itr );
          });
-   } else {
-      old_approvals old_apptable( get_self(), proposer.value );
-      auto& apps = old_apptable.get( proposal_name.value, "proposal not found" );
-
-      auto itr = std::find( apps.requested_approvals.begin(), apps.requested_approvals.end(), level );
-      check( itr != apps.requested_approvals.end(), "approval is not on the list of requested approvals" );
-
-      old_apptable.modify( apps, proposer, [&]( auto& a ) {
-            a.provided_approvals.push_back( level );
-            a.requested_approvals.erase( itr );
-         });
    }
 
    transaction_header trx_header = get_trx_header(prop.packed_transaction.data(), prop.packed_transaction.size());
@@ -162,14 +141,7 @@ void multisig::unapprove( name proposer, name proposal_name, permission_level le
             a.provided_approvals.erase( itr );
          });
    } else {
-      old_approvals old_apptable( get_self(), proposer.value );
-      auto& apps = old_apptable.get( proposal_name.value, "proposal not found" );
-      auto itr = std::find( apps.provided_approvals.begin(), apps.provided_approvals.end(), level );
-      check( itr != apps.provided_approvals.end(), "no approval previously granted" );
-      old_apptable.modify( apps, proposer, [&]( auto& a ) {
-            a.requested_approvals.push_back( level );
-            a.provided_approvals.erase( itr );
-         });
+      check( false, "proposal not found" );
    }
 
    proposals proptable( get_self(), proposer.value );
@@ -206,11 +178,6 @@ void multisig::cancel( name proposer, name proposal_name, name canceler ) {
    auto apps_it = apptable.find( proposal_name.value );
    if ( apps_it != apptable.end() ) {
       apptable.erase(apps_it);
-   } else {
-      old_approvals old_apptable( get_self(), proposer.value );
-      auto apps_it = old_apptable.find( proposal_name.value );
-      check( apps_it != old_apptable.end(), "proposal not found" );
-      old_apptable.erase(apps_it);
    }
 }
 
