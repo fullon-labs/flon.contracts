@@ -46,6 +46,9 @@ void multisig::propose( name proposer,
    require_auth( proposer );
    auto& ds = get_datastream();
 
+   check( name(0) != proposal_name, "proposal name cannot be empty" );
+   check( requested.size() > 0, "must request at least one approval" );
+   
    const char* trx_pos = ds.pos();
    size_t size = ds.remaining();
 
