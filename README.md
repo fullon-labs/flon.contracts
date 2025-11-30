@@ -1,6 +1,6 @@
-# EOS system contracts
+# FLON system contracts
 
-EOS system contracts are a collection of contracts specifically designed for the EOS blockchain, which implements a lot of critical functionality that goes beyond what is provided by the base Antelope protocol, the protocol on which EOS blockchain is built on.
+FLON system contracts are a collection of contracts specifically designed for the FLON blockchain, which implements a lot of critical functionality that goes beyond what is provided by the base Antelope protocol, the protocol on which FLON blockchain is built on.
 
 The Antelope protocol includes capabilities such as:
 
@@ -45,7 +45,7 @@ The build guide below will assume you are running Ubuntu 22.04. However, as ment
 
 ### Build or install CDT dependency
 
-The CDT dependency is required. This release of the system contracts requires at least version 4.1.0 of CDT, and nodeos version fullon v1.0.0 or later.
+The CDT dependency is required. This release of the system contracts requires at least version 4.1.0 of CDT, and nodFLON version fullon v1.0.0 or later.
 
 The easiest way to satisfy this dependency is to install CDT on your system through a package. Find the release of a compatible version of CDT from its [releases page](https://github.com/fullon-labs/flon.cdt/releases), download the package file appropriate for your OS from the attached assets, and install the package.
 
