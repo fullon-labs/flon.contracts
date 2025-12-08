@@ -211,7 +211,7 @@ namespace eosiosystem {
    // Scope is current contract account
    // - `owner` the user account name
    // - `creator` the creator account name
-   struct [[eosio::table, eosio::contract("flon.system")]] user_account {
+   struct [[eosio::table, eosio::contract("flon.system")]] account_creator {
       name                 owner;                     /// the user account name
       name                 creator;                   /// the creator account name
       uint8_t              revision              = 0; ///< used to track version updates in the future.
@@ -219,7 +219,7 @@ namespace eosiosystem {
       uint64_t primary_key()const { return owner.value; }
    };
 
-   typedef eosio::multi_index< "users"_n, user_account >  users_table;
+   typedef eosio::multi_index< "creators"_n, account_creator >  creators_table;
 
    #ifdef ENABLE_VOTING_PRODUCER
    // Defines `producer_info` structure to be stored in `producer_info` table, added after version 1.0
@@ -391,7 +391,7 @@ namespace eosiosystem {
    class [[eosio::contract("flon.system")]] system_contract : public native {
 
       private:
-         // users_table             _users;
+         // creators_table             _users;
       #ifdef ENABLE_VOTING_PRODUCER
          voters_table             _voters;
          producers_table          _producers;

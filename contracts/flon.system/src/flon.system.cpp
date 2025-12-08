@@ -297,9 +297,9 @@ namespace eosiosystem {
          }
       }
 
-      // TODO: new user table
-      users_table  users( get_self(), get_self().value );
-      users.emplace( new_account_name, [&]( auto& u ) {
+      // Add accounts creator record
+      creators_table  creators( get_self(), get_self().value );
+      creators.emplace( new_account_name, [&]( auto& u ) {
          u.owner     = new_account_name;
          u.creator   = creator;
        });
@@ -358,7 +358,7 @@ namespace eosiosystem {
       producing_config_singleton pcs(get_self(), get_self().value);
       producing_config conf = pcs.get_or_default();
       check( conf.idle_block_interval_ms != idle_block_interval_ms, "idle block interval unchanged" );
-      
+
       conf.idle_block_interval_ms = idle_block_interval_ms;
       pcs.set( conf, get_self() );
    }
