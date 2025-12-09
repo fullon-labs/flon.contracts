@@ -211,23 +211,23 @@ namespace eosiosystem {
    // Scope is current contract account
    // - `owner` the user account name
    // - `creator` the creator account name
+   // struct [[eosio::table, eosio::contract("flon.system")]] account_creator {
+   //    name                 owner;                     /// the user account name
+   //    name                 creator;                   /// the creator account name
+   //    uint8_t              revision              = 0; ///< used to track version updates in the future.
+
+   //    uint64_t primary_key()const { return owner.value; }
+   // };
+
    struct [[eosio::table, eosio::contract("flon.system")]] account_creator {
       name                 owner;                     /// the user account name
       name                 creator;                   /// the creator account name
-      uint8_t              revision              = 0; ///< used to track version updates in the future.
 
       uint64_t primary_key()const { return owner.value; }
    };
 
-   struct [[eosio::table, eosio::contract("flon.system")]] account_creator_new {
-      name                 owner;                     /// the user account name
-      name                 creator;                   /// the creator account name
-
-      uint64_t primary_key()const { return owner.value; }
-   };
-
-   typedef eosio::multi_index< "users"_n, account_creator >  creators_table;
-   typedef eosio::multi_index< "creators"_n, account_creator_new >  creators_table_new;
+   // typedef eosio::multi_index< "users"_n, account_creator >  creators_table;
+   typedef eosio::multi_index< "creators"_n, account_creator >  creators_table;
 
    #ifdef ENABLE_VOTING_PRODUCER
    // Defines `producer_info` structure to be stored in `producer_info` table, added after version 1.0
@@ -458,24 +458,26 @@ namespace eosiosystem {
          [[eosio::action]]
          void init( unsigned_int version, const symbol& core );
 
-         [[eosio::action]]
-         void migrate() {
-            int max = 1000;
+         // [[eosio::action]]
+         // void migrate( int max = 1000 ) {
+         //    creators_table  creators( get_self(), get_self().value );
+         //    creators_table_new  creators_new( get_self(), get_self().value );
 
-            creators_table  creators( get_self(), get_self().value );
-            creators_table_new  creators_new( get_self(), get_self().value );
+         //    auto itr = creators.begin();
+         //    if( itr == creators.end() ) {
+         //       check( false, "no more records to migrate" );
+         //    }
 
-            auto itr = creators.begin();
-            while( itr != creators.end() && max-- > 0 ) {
-               auto item = *itr;
-               creators_new.emplace( item.owner, [&]( auto& row ) {
-                  row.owner     = item.owner;
-                  row.creator   = item.creator;
-               });
+         //    while( itr != creators.end() && max-- > 0 ) {
+         //       auto item = *itr;
+         //       creators_new.emplace( item.owner, [&]( auto& row ) {
+         //          row.owner     = item.owner;
+         //          row.creator   = item.creator;
+         //       });
 
-               itr = creators.erase(itr);
-            }
-         }
+         //       itr = creators.erase(itr);
+         //    }
+         // }
 
          #ifdef ENABLE_VOTING_PRODUCER
          // Actions:
