@@ -125,10 +125,8 @@ namespace eosiosystem {
    using blockchain_parameters_t = eosio::blockchain_parameters;
 #endif
 
-#ifdef ENABLE_VOTING_PRODUCER
    static constexpr uint32_t max_vote_producer_count     = 30;
    static constexpr uint32_t vote_interval_sec           = 1 * seconds_per_day;
-#endif
 
   /**
    * The `flon.system` smart contract is provided by `block.one` as a sample system contract, and it defines the structures and actions needed for blockchain's core functionality.
@@ -229,7 +227,6 @@ namespace eosiosystem {
    // typedef eosio::multi_index< "users"_n, account_creator >  creators_table;
    typedef eosio::multi_index< "creators"_n, account_creator >  creators_table;
 
-   #ifdef ENABLE_VOTING_PRODUCER
    // Defines `producer_info` structure to be stored in `producer_info` table, added after version 1.0
    struct [[eosio::table, eosio::contract("flon.system")]] producer_info {
       name                             owner;
@@ -357,11 +354,9 @@ namespace eosiosystem {
    typedef eosio::multi_index< "producers"_n, producer_info,
                                indexed_by<"prototalvote"_n, const_mem_fun<producer_info, uint64_t, &producer_info::by_votes>  >
                              > producers_table;
-   #endif//ENABLE_VOTING_PRODUCER
 
    typedef eosio::singleton< "global"_n, eosio_global_state >   global_state_singleton;
 
-   #ifdef ENABLE_VOTING_PRODUCER
    struct [[eosio::table, eosio::contract("flon.system")]] vote_refund {
       name            owner;
       time_point_sec  request_time;
@@ -374,8 +369,6 @@ namespace eosiosystem {
    };
 
    typedef eosio::multi_index< "voterefund"_n, vote_refund >      vote_refund_table;
-   #endif//ENABLE_VOTING_PRODUCER
-
 
    // Defines new global state parameters.
    struct [[eosio::table("prodconf"), eosio::contract("flon.system")]] producing_config {
@@ -400,7 +393,7 @@ namespace eosiosystem {
 
       private:
          // creators_table             _users;
-      #ifdef ENABLE_VOTING_PRODUCER
+
          voters_table             _voters;
          producers_table          _producers;
          finalizer_keys_table     _finalizer_keys;
@@ -408,7 +401,6 @@ namespace eosiosystem {
          last_prop_fins_table     _last_prop_finalizers;
          std::optional<std::vector<finalizer_auth_info>> _last_prop_finalizers_cached;
          fin_key_id_gen_table     _fin_key_id_generator;
-         #endif//ENABLE_VOTING_PRODUCER
          global_state_singleton   _global;
          eosio_global_state       _gstate;
 
@@ -479,7 +471,6 @@ namespace eosiosystem {
          //    }
          // }
 
-         #ifdef ENABLE_VOTING_PRODUCER
          // Actions:
          /**
           * The Init elect action initializes the election of producers.
@@ -498,7 +489,6 @@ namespace eosiosystem {
           */
          [[eosio::action]]
          void cfgelection( const time_point& election_activated_time, const time_point& reward_started_time, const asset& initial_rewards_per_block);
-         #endif//ENABLE_VOTING_PRODUCER
 
          /**
           * On block action. This special action is triggered when a block is applied by the given producer
@@ -561,7 +551,6 @@ namespace eosiosystem {
          [[eosio::action]]
          void buygasself( const name& account, const asset& quant );
 
-         #ifdef ENABLE_VOTING_PRODUCER
          /**
           * Refund vote action, this action is called after the subvote-period to claim all pending
           * staked core asset of substracted votes belonging to owner.
@@ -755,20 +744,17 @@ namespace eosiosystem {
           */
          [[eosio::action]]
          void subvote( const name& voter, const asset& vote_staked );
-         #else
 
-         /**
-          * Set producers action, sets a new list of active producers, by proposing a schedule change, once the block that
-          * contains the proposal becomes irreversible, the schedule is promoted to "pending"
-          * automatically. Once the block that promotes the schedule is irreversible, the schedule will
-          * become "active".
-          *
-          * @param schedule - New list of active producers to set
-          */
-         [[eosio::action]]
-         void setprods( const std::vector<eosio::producer_authority>& schedule );
-
-         #endif//ENABLE_VOTING_PRODUCER
+         // /**
+         //  * Set producers action, sets a new list of active producers, by proposing a schedule change, once the block that
+         //  * contains the proposal becomes irreversible, the schedule is promoted to "pending"
+         //  * automatically. Once the block that promotes the schedule is irreversible, the schedule will
+         //  * become "active".
+         //  *
+         //  * @param schedule - New list of active producers to set
+         //  */
+         // [[eosio::action]]
+         // void setprods( const std::vector<eosio::producer_authority>& schedule );
 
          /**
           * Set the blockchain parameters. By tunning these parameters a degree of
@@ -788,7 +774,6 @@ namespace eosiosystem {
          void wasmcfg( const name& settings );
 #endif
 
-         #ifdef ENABLE_VOTING_PRODUCER
          /**
           * Claim rewards action, claims block producing and vote rewards.
           * @param owner - producer account claiming per-block and per-vote rewards.
@@ -802,7 +787,6 @@ namespace eosiosystem {
           */
          // [[eosio::action]]
          // void undoreward( const name& owner, const asset& rewards );
-         #endif//ENABLE_VOTING_PRODUCER
 
          /**
           * Set privilege status for an account. Allows to set privilege status for an account (turn it on/off).
@@ -812,14 +796,12 @@ namespace eosiosystem {
          [[eosio::action]]
          void setpriv( const name& account, uint8_t is_priv );
 
-         #ifdef ENABLE_VOTING_PRODUCER
          /**
           * Remove producer action, deactivates a producer by name, if not found asserts.
           * @param producer - the producer account to deactivate.
           */
          [[eosio::action]]
          void rmvproducer( const name& producer );
-         #endif//ENABLE_VOTING_PRODUCER
 
          #ifdef ENABLE_NAME_BID
          /**
@@ -894,7 +876,7 @@ namespace eosiosystem {
          using activate_action = eosio::action_wrapper<"activate"_n, &system_contract::activate>;
          using logsystemfee_action = eosio::action_wrapper<"logsystemfee"_n, &system_contract::logsystemfee>;
          using buygas_action = eosio::action_wrapper<"buygas"_n, &system_contract::buygas>;
-         #ifdef ENABLE_VOTING_PRODUCER
+
          using regproducer_action = eosio::action_wrapper<"regproducer"_n, &system_contract::regproducer>;
          using regproducer2_action = eosio::action_wrapper<"regproducer2"_n, &system_contract::regproducer2>;
          using unregprod_action = eosio::action_wrapper<"unregprod"_n, &system_contract::unregprod>;
@@ -902,7 +884,7 @@ namespace eosiosystem {
          // using voteupdate_action = eosio::action_wrapper<"voteupdate"_n, &system_contract::voteupdate>;
          using claimrewards_action = eosio::action_wrapper<"claimrewards"_n, &system_contract::claimrewards>;
          using rmvproducer_action = eosio::action_wrapper<"rmvproducer"_n, &system_contract::rmvproducer>;
-         #endif//ENABLE_VOTING_PRODUCER
+
          #ifdef ENABLE_NAME_BID
          using bidname_action = eosio::action_wrapper<"bidname"_n, &system_contract::bidname>;
          using bidrefund_action = eosio::action_wrapper<"bidrefund"_n, &system_contract::bidrefund>;
@@ -936,7 +918,6 @@ namespace eosiosystem {
          void channel_to_system_fees( const name& from, const asset& amount );
 
 
-         #ifdef ENABLE_VOTING_PRODUCER
          // defined in voting.cpp
          void register_producer( const name& producer, const eosio::block_signing_authority& producer_authority,
                                  const std::string& url, uint16_t location, optional<uint32_t> reward_shared_ratio );
@@ -950,8 +931,6 @@ namespace eosiosystem {
          const std::vector<finalizer_auth_info>& get_last_proposed_finalizers();
          uint64_t get_next_finalizer_key_id();
          finalizers_table::const_iterator get_finalizer_itr( const name& finalizer_name ) const;
-
-         #endif//ENABLE_VOTING_PRODUCER
 
          template <auto system_contract::*...Ptrs>
          class registration {

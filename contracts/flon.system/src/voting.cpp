@@ -27,7 +27,6 @@ namespace eosiosystem {
    using eosio::singleton;
    using std::to_string;
 
-   #ifdef ENABLE_VOTING_PRODUCER
    void system_contract::register_producer(  const name& producer,
                                              const block_signing_authority& producer_authority,
                                              const string& url,
@@ -52,10 +51,10 @@ namespace eosiosystem {
          }
       }, producer_authority );
 
-      if (!flon::flon_reward::is_producer_registered(reward_account, producer)) {
-         flon::flon_reward::regproducer_action reg_act{ reward_account, { {producer, active_permission} } };
-         reg_act.send( producer );
-      }
+      // if (!flon::flon_reward::is_producer_registered(reward_account, producer)) {
+      //    flon::flon_reward::regproducer_action reg_act{ reward_account, { {producer, active_permission} } };
+      //    reg_act.send( producer );
+      // }
 
       if ( prod != _producers.end() ) {
          _producers.modify( prod, producer, [&]( producer_info& info ){
@@ -244,8 +243,8 @@ namespace eosiosystem {
       update_producer_votes(modified_prods, 0, false);
       update_producer_votes(added_prods, voter_itr->votes, false);
 
-      flon::flon_reward::voteproducer_action voteproducer_act{ reward_account, { {get_self(), active_permission}, {voter_name, active_permission} } };
-      voteproducer_act.send( voter_name, producers );
+      // flon::flon_reward::voteproducer_action voteproducer_act{ reward_account, { {get_self(), active_permission}, {voter_name, active_permission} } };
+      // voteproducer_act.send( voter_name, producers );
 
       _voters.modify( voter_itr, same_payer, [&]( auto& v ) {
          v.producers          = producers;
@@ -308,8 +307,8 @@ namespace eosiosystem {
          });
       }
 
-      flon::flon_reward::addvote_action addvote_act{ reward_account, { {get_self(), active_permission}, {voter, active_permission} } };
-      addvote_act.send( voter, votes );
+      // flon::flon_reward::addvote_action addvote_act{ reward_account, { {get_self(), active_permission}, {voter, active_permission} } };
+      // addvote_act.send( voter, votes );
    }
 
    void system_contract::subvote( const name& voter, const asset& vote_staked ) {
@@ -342,8 +341,8 @@ namespace eosiosystem {
          v.last_unvoted_time  = now;
       });
 
-      flon::flon_reward::subvote_action subvote_act{ reward_account, { {get_self(), active_permission}, {voter, active_permission} } };
-      subvote_act.send( voter, votes );
+      // flon::flon_reward::subvote_action subvote_act{ reward_account, { {get_self(), active_permission}, {voter, active_permission} } };
+      // subvote_act.send( voter, votes );
 
       vote_refund_tbl.emplace( voter, [&]( auto& r ) {
          r.owner = voter;
@@ -371,12 +370,9 @@ namespace eosiosystem {
       vote_refund_tbl.erase( itr );
    }
 
-   #else
+   // void system_contract::setprods( const std::vector<eosio::producer_authority>& schedule ) {
+   //    require_auth( get_self() );
+   //    set_proposed_producers( schedule );
+   // }
 
-   void system_contract::setprods( const std::vector<eosio::producer_authority>& schedule ) {
-      require_auth( get_self() );
-      set_proposed_producers( schedule );
-   }
-
-   #endif//ENABLE_VOTING_PRODUCER
 } /// namespace eosiosystem
