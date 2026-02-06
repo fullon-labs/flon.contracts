@@ -17,6 +17,32 @@
 #include <algorithm>
 #include <cmath>
 
+namespace db {
+
+    template<typename table, typename Lambda>
+    inline void set(table &tbl,  typename table::const_iterator& itr, const eosio::name& emplaced_payer,
+            const eosio::name& modified_payer, Lambda&& setter )
+   {
+        if (itr == tbl.end()) {
+            tbl.emplace(emplaced_payer, [&]( auto& p ) {
+               setter(p, true);
+            });
+        } else {
+            tbl.modify(itr, modified_payer, [&]( auto& p ) {
+               setter(p, false);
+            });
+        }
+    }
+
+    template<typename table, typename Lambda>
+    inline void set(table &tbl,  typename table::const_iterator& itr, const eosio::name& emplaced_payer,
+               Lambda&& setter )
+   {
+      set(tbl, itr, emplaced_payer, eosio::same_payer, setter);
+   }
+
+}// namespace db
+
 namespace eosiosystem {
 
    using eosio::const_mem_fun;
@@ -26,6 +52,34 @@ namespace eosiosystem {
    using eosio::seconds;
    using eosio::singleton;
    using std::to_string;
+
+
+// void change_vote(const name& voter, int64_t votes, bool is_adding) {
+//    // require_auth( SYSTEM_CONTRACT );
+//    // require_auth( voter );
+
+//    // CHECK(votes.symbol == vote_symbol, "votes symbol mismatch")
+//    CHECK(votes.amount > 0, "votes must be positive")
+
+//    auto now = eosio::current_time_point();
+//    auto voter_itr = _voter_tbl.find(voter.value);
+//    db::set(_voter_tbl, voter_itr, voter, voter, [&]( auto& v, bool is_new ) {
+//       if (is_new) {
+//          v.owner = voter;
+//       }
+
+//       auto votes_delta = votes;
+//       if (!is_adding) {
+//          CHECK(v.votes >= votes, "voter's votes insufficent")
+//          votes_delta = -votes;
+//       }
+//       allocate_producer_rewards(v.producers, v.votes, votes_delta, voter, v.unclaimed_rewards);
+//       v.votes        += votes_delta;
+//       CHECK(v.votes.amount >= 0, "voter's votes can not be negative")
+
+//       v.update_at    = now;
+//    });
+// }
 
    void system_contract::register_producer(  const name& producer,
                                              const block_signing_authority& producer_authority,
@@ -191,6 +245,48 @@ namespace eosiosystem {
    //    return double(staked) * std::pow( 2, weight );
    // }
 
+   inline static int128_t calc_voter_rewards(int64_t votes, const int128_t& rewards_per_vote) {
+      ASSERT(votes >= 0 && rewards_per_vote >= 0);
+      CHECK(votes * rewards_per_vote >= rewards_per_vote, "calculated rewards overflow");
+      int128_t rewards = votes * rewards_per_vote / HIGH_PRECISION;
+      CHECK(rewards >= 0 && rewards <= std::numeric_limits<int64_t>::max(), "calculated rewards overflow");
+      return rewards;
+   }
+
+   template<typename T>
+   void calc_shared_rewards(T& _producers, const name& prod_name, const int128_t& last_rewards_per_vote, int64_t votes_old,
+            int64_t votes_delta, int64_t &new_shared_rewards_out, int128_t& new_rewards_per_vote) {
+
+      auto now = eosio::current_time_point();
+      // for ( auto& voted_prod : producers) {
+         // const auto& prod_name = voted_prod.first;
+         // auto& last_rewards_per_vote = voted_prod.second.last_rewards_per_vote; // will be updated below
+
+         auto prod_itr = _producers.find(prod_name.value);
+         CHECK(prod_itr != _producers.end(), "producer not found");
+         _producers.modify( prod_itr, same_payer, [&]( auto& p ) {
+
+
+            CHECK(p.rewards_per_vote >= last_rewards_per_vote, "last_rewards_per_vote invalid");
+            int128_t rewards_per_vote_delta = p.rewards_per_vote - last_rewards_per_vote;
+            if (rewards_per_vote_delta > 0 && votes_old > 0) {
+               ASSERT(votes_old <= p.total_votes)
+               new_shared_rewards_out = calc_voter_rewards(votes_old, rewards_per_vote_delta);
+               CHECK(p.available_shared_rewards.amount >= new_shared_rewards_out, "producer allocating rewards insufficient");
+               p.available_shared_rewards.amount -= new_shared_rewards_out;
+               p.total_shared_rewards.amount += new_shared_rewards_out;
+               ASSERT(p.total_shared_rewards.amount >= new_shared_rewards_out) // check overflow
+
+            }
+
+            p.total_votes += votes_delta;
+            CHECK(p.total_votes >= 0, "producer votes can not be negtive")
+            // p.update_at = now;
+
+            new_rewards_per_vote = p.rewards_per_vote; // update for voted_prod
+         });
+   }
+
    void system_contract::voteproducer( const name& voter_name, const std::vector<name>& producers ) {
 
       require_auth(voter_name);
@@ -204,7 +300,7 @@ namespace eosiosystem {
       check( voter_itr != _voters.end(), "voter not found" ); /// addvote creates voter object
 
       ASSERT( voter_itr->votes >= 0 )
-      CHECKC( voter_itr->producers != producers, err::VOTE_CHANGE_ERROR, "producers no change" )
+      // CHECKC( voter_itr->producers != producers, err::VOTE_CHANGE_ERROR, "producers no change" )
       // if( voter_itr->producers == producers ) return;
 
       auto now = current_time_point();
@@ -213,42 +309,72 @@ namespace eosiosystem {
       const auto& old_prods = voter_itr->producers;
       auto old_prod_itr = old_prods.begin();
       auto new_prod_itr = producers.begin();
-      std::vector<name> removed_prods; removed_prods.reserve(old_prods.size());
-      std::vector<name> modified_prods; removed_prods.reserve(old_prods.size());
-      std::vector<name> added_prods;   added_prods.reserve(producers.size());
+      // std::vector<name> removed_prods; removed_prods.reserve(old_prods.size());
+      // std::vector<name> modified_prods; removed_prods.reserve(old_prods.size());
+      // std::vector<name> added_prods;   added_prods.reserve(producers.size());
+      std::set<voted_producer_info>    new_prods;
+      int64_t unclaimed_rewards = 0;
       while(old_prod_itr != old_prods.end() || new_prod_itr != producers.end()) {
+         voted_producer_info cur_prod = {};
+         int64_t votes_delta = 0;
+         bool is_removed = false;
 
          if (old_prod_itr != old_prods.end() && new_prod_itr != producers.end()) {
-            if (old_prod_itr < new_prod_itr) {
-               removed_prods.push_back(*old_prod_itr);
+            if (old_prod_itr->producer_name < (*new_prod_itr)) {
+               // removed_prods.push_back(*old_prod_itr);
+               cur_prod = *old_prod_itr;
+               votes_delta = -voter_itr->votes;
+               is_removed = true;
                old_prod_itr++;
-            } else if (new_prod_itr < old_prod_itr) {
-               added_prods.push_back(*new_prod_itr);
+            } else if ((*new_prod_itr) < old_prod_itr->producer_name) {
+               // added_prods.push_back(*new_prod_itr);
+               cur_prod = {*new_prod_itr, 0};
+               votes_delta = voter_itr->votes;
                new_prod_itr++;
-            } else { // new_prod_itr == old_prod_itr
-               modified_prods.push_back(*old_prod_itr);
+            } else { // old_prod_itr->producer_name == (*new_prod_itr)
+               // modified_prods.push_back(*old_prod_itr);
+               cur_prod = *old_prod_itr;
+               votes_delta = 0;
                old_prod_itr++;
                new_prod_itr++;
             }
          } else if ( old_prod_itr != old_prods.end() ) { //  && new_prod_itr == producers.end()
-               removed_prods.push_back(*old_prod_itr);
+               // removed_prods.push_back(*old_prod_itr);
+               cur_prod = *old_prod_itr;
+               votes_delta = -voter_itr->votes;
+               is_removed = true;
                old_prod_itr++;
          } else { // new_prod_itr != producers.end() && old_prod_itr == old_prods.end()
-               added_prods.push_back(*new_prod_itr);
+               // added_prods.push_back(*new_prod_itr);
+               cur_prod = {*new_prod_itr, 0};
+               votes_delta = voter_itr->votes;
                new_prod_itr++;
          }
+
+         int64_t new_shared_rewards = 0;
+         int128_t new_rewards_per_vote = 0;
+         calc_shared_rewards(_producers, cur_prod.producer_name, cur_prod.last_rewards_per_vote, voter_itr->votes,
+            votes_delta,  new_shared_rewards, new_rewards_per_vote);
+
+         if(!is_removed) {
+            new_prods.emplace(voted_producer_info{cur_prod.producer_name, new_rewards_per_vote});
+         }
+         unclaimed_rewards += new_shared_rewards;
+         ASSERT(unclaimed_rewards >= new_shared_rewards) // check overflow
       }
 
-      update_producer_votes(removed_prods, -voter_itr->votes, false);
-      update_producer_votes(modified_prods, 0, false);
-      update_producer_votes(added_prods, voter_itr->votes, false);
+      // update_producer_votes(removed_prods, -voter_itr->votes, false);
+      // update_producer_votes(modified_prods, 0, false);
+      // update_producer_votes(added_prods, voter_itr->votes, false);
 
       // flon::flon_reward::voteproducer_action voteproducer_act{ reward_account, { {get_self(), active_permission}, {voter_name, active_permission} } };
       // voteproducer_act.send( voter_name, producers );
 
       _voters.modify( voter_itr, same_payer, [&]( auto& v ) {
-         v.producers          = producers;
-         v.last_unvoted_time  = now;
+         v.producers                = new_prods;
+         v.unclaimed_rewards.amount += unclaimed_rewards;
+         ASSERT(v.unclaimed_rewards.amount >= unclaimed_rewards) // check overflow
+         v.last_unvoted_time        = now;
       });
    }
 
@@ -294,7 +420,7 @@ namespace eosiosystem {
       auto voter_itr = _voters.find( voter.value );
       if( voter_itr != _voters.end() ) {
          if (voter_itr->producers.size() > 0) {
-            update_producer_votes(voter_itr->producers, votes, false);
+            // update_producer_votes(voter_itr->producers, votes, false);
          }
 
          _voters.modify( voter_itr, same_payer, [&]( auto& v ) {
@@ -302,7 +428,7 @@ namespace eosiosystem {
          });
       } else {
          _voters.emplace( voter, [&]( auto& v ) {
-            v.owner              = voter;
+            v.owner                    = voter;
             v.votes              = votes;
          });
       }
@@ -334,7 +460,7 @@ namespace eosiosystem {
       vote_refund_table vote_refund_tbl( get_self(), voter.value );
       CHECKC( vote_refund_tbl.find( voter.value ) == vote_refund_tbl.end(), err::VOTE_REFUND_ERROR, "This account already has a vote refund" );
 
-      update_producer_votes(voter_itr->producers, -votes, false);
+      // update_producer_votes(voter_itr->producers, -votes, false);
 
       _voters.modify( voter_itr, same_payer, [&]( auto& v ) {
          v.votes             -= votes;

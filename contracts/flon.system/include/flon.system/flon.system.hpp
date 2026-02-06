@@ -113,6 +113,8 @@ namespace eosiosystem {
    static constexpr int64_t  reward_halving_period_seconds  = 5 * seconds_per_year;
    static constexpr int64_t  reward_halving_period_blocks   = reward_halving_period_seconds * 1000 / block_timestamp::block_interval_ms;
 
+   static constexpr int128_t  HIGH_PRECISION    = 1'000'000'000'000'000'000; // 10^18
+
 #ifdef SYSTEM_BLOCKCHAIN_PARAMETERS
    struct blockchain_parameters_v1 : eosio::blockchain_parameters
    {
@@ -239,6 +241,10 @@ namespace eosiosystem {
       uint16_t                         location = 0;
       eosio::block_signing_authority   producer_authority;
       uint32_t                         reward_shared_ratio  = 0; //reward shared ratio
+
+      asset                            available_shared_rewards;
+      asset                            total_shared_rewards; // = available_shared_rewards + claimed_shared_rewards
+      int128_t                         rewards_per_vote = 0;
       uint8_t                          revision = 0; ///< used to track version updates in the future.
 
       uint64_t primary_key()const { return owner.value;                             }
@@ -334,17 +340,27 @@ namespace eosiosystem {
 
    typedef eosio::multi_index< "finkeyidgen"_n, fin_key_id_generator_info >  fin_key_id_gen_table;
 
+   struct voted_producer_info {
+      name              producer_name;
+      int128_t          last_rewards_per_vote = 0;
+
+      inline friend bool operator<(const voted_producer_info& a, const voted_producer_info& b)  {
+         return a.producer_name < b.producer_name;
+      }
+   };
+
    // Voter info. Voter info stores information about the voter:
    // - `owner` the voter
    // - `producers` the producers approved by this voter
    // - `staked` the amount staked
    struct [[eosio::table, eosio::contract("flon.system")]] voter_info {
-      name                owner;     /// the voter
-      std::vector<name>   producers; /// the producers approved by this voter
-      int64_t             votes                 = 0;  /// elected votes
-      block_timestamp     last_unvoted_time;          /// vote updated time
-      uint8_t             revision              = 0; ///< used to track version updates in the future.
-
+      name                             owner;     /// the voter
+      std::set<voted_producer_info>    producers; /// the producers approved by this voter
+      int64_t                          votes = 0;  /// elected votes
+      block_timestamp                  last_unvoted_time;          /// vote updated time
+      asset                            unclaimed_rewards;
+      asset                            claimed_rewards;
+      uint8_t                          revision = 0; ///< used to track version updates in the future.
       uint64_t primary_key()const { return owner.value; }
    };
 
