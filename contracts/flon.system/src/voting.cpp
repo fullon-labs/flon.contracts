@@ -62,8 +62,8 @@ namespace eosiosystem {
 //    CHECK(votes.amount > 0, "votes must be positive")
 
 //    auto now = eosio::current_time_point();
-//    auto voter_itr = _voter_tbl.find(voter.value);
-//    db::set(_voter_tbl, voter_itr, voter, voter, [&]( auto& v, bool is_new ) {
+//    auto voter_itr = _voters.find(voter.value);
+//    db::set(_voters, voter_itr, voter, voter, [&]( auto& v, bool is_new ) {
 //       if (is_new) {
 //          v.owner = voter;
 //       }
@@ -312,7 +312,7 @@ namespace eosiosystem {
       // std::vector<name> removed_prods; removed_prods.reserve(old_prods.size());
       // std::vector<name> modified_prods; removed_prods.reserve(old_prods.size());
       // std::vector<name> added_prods;   added_prods.reserve(producers.size());
-      std::set<voted_producer_info>    new_prods;
+      std::vector<voted_producer_info>    new_prods;
       int64_t unclaimed_rewards = 0;
       while(old_prod_itr != old_prods.end() || new_prod_itr != producers.end()) {
          voted_producer_info cur_prod = {};
@@ -357,7 +357,7 @@ namespace eosiosystem {
             votes_delta,  new_shared_rewards, new_rewards_per_vote);
 
          if(!is_removed) {
-            new_prods.emplace(voted_producer_info{cur_prod.producer_name, new_rewards_per_vote});
+            new_prods.emplace_back(voted_producer_info{cur_prod.producer_name, new_rewards_per_vote});
          }
          unclaimed_rewards += new_shared_rewards;
          ASSERT(unclaimed_rewards >= new_shared_rewards) // check overflow
@@ -371,7 +371,7 @@ namespace eosiosystem {
       // voteproducer_act.send( voter_name, producers );
 
       _voters.modify( voter_itr, same_payer, [&]( auto& v ) {
-         v.producers                = new_prods;
+         v.producers                = std::move(new_prods);
          v.unclaimed_rewards.amount += unclaimed_rewards;
          ASSERT(v.unclaimed_rewards.amount >= unclaimed_rewards) // check overflow
          v.last_unvoted_time        = now;
@@ -403,35 +403,35 @@ namespace eosiosystem {
    void system_contract::addvote( const name& voter, const asset& vote_staked ) {
       require_auth(voter);
 
-      CHECK(vote_staked.symbol == core_symbol(), "vote_staked must be core symbol")
-      CHECK(vote_staked.amount > 0, "vote_staked must be positive")
-
       if (_gstate.total_vote_stake.amount == 0) {
          _gstate.total_vote_stake = vote_staked;
       } else {
          _gstate.total_vote_stake += vote_staked;
       }
+      ASSERT(_gstate.total_vote_stake.amount >= 0)
 
-      auto votes = vote_staked.amount;
-      eosio::token::transfer_action transfer_act{ token_account, { {voter, active_permission} } };
-      transfer_act.send( voter, vote_account, vote_staked, "addvote" );
+      change_vote(voter, vote_staked, true);
 
-      auto now = current_time_point();
-      auto voter_itr = _voters.find( voter.value );
-      if( voter_itr != _voters.end() ) {
-         if (voter_itr->producers.size() > 0) {
-            // update_producer_votes(voter_itr->producers, votes, false);
-         }
+      // auto votes = vote_staked.amount;
+      // // eosio::token::transfer_action transfer_act{ token_account, { {voter, active_permission} } };
+      // // transfer_act.send( voter, vote_account, vote_staked, "addvote" );
 
-         _voters.modify( voter_itr, same_payer, [&]( auto& v ) {
-            v.votes             += votes;
-         });
-      } else {
-         _voters.emplace( voter, [&]( auto& v ) {
-            v.owner                    = voter;
-            v.votes              = votes;
-         });
-      }
+      // auto now = current_time_point();
+      // auto voter_itr = _voters.find( voter.value );
+      // if( voter_itr != _voters.end() ) {
+      //    if (voter_itr->producers.size() > 0) {
+      //       // update_producer_votes(voter_itr->producers, votes, false);
+      //    }
+
+      //    _voters.modify( voter_itr, same_payer, [&]( auto& v ) {
+      //       v.votes             += votes;
+      //    });
+      // } else {
+      //    _voters.emplace( voter, [&]( auto& v ) {
+      //       v.owner                    = voter;
+      //       v.votes              = votes;
+      //    });
+      // }
 
       // flon::flon_reward::addvote_action addvote_act{ reward_account, { {get_self(), active_permission}, {voter, active_permission} } };
       // addvote_act.send( voter, votes );
@@ -439,50 +439,75 @@ namespace eosiosystem {
 
    void system_contract::subvote( const name& voter, const asset& vote_staked ) {
       require_auth(voter);
+
       auto now = current_time_point();
       CHECK( _gstate.election_activated_time != time_point() && _gstate.election_activated_time <= now,
              "cannot subvote until the election is activated" );
 
+      change_vote( voter, vote_staked, false);
+
+      CHECK(_gstate.total_vote_stake.amount > 0 && _gstate.total_vote_stake >= vote_staked, "Total vote staked insufficent")
+      _gstate.total_vote_stake -= vote_staked;
+   }
+
+   void system_contract::change_vote(const name& voter, const asset& vote_staked, bool is_adding) {
+
       CHECK(vote_staked.symbol == core_symbol(), "vote_staked must be core symbol")
       CHECK(vote_staked.amount > 0, "vote_staked must be positive")
 
-      auto votes = vote_staked.amount;
-      auto voter_itr = _voters.find( voter.value );
-      CHECK( voter_itr != _voters.end(), "voter not found" )
+      auto now = eosio::current_time_point();
+      auto voter_itr = _voters.find(voter.value);
+      db::set(_voters, voter_itr, voter, voter, [&]( auto& v, bool is_new ) {
+         if (is_new) {
+            CHECK( is_adding, "voter not found when subvote" )
 
-      CHECK( voter_itr->votes >= votes, "votes insufficent" )
+            v.owner = voter;
+            v.unclaimed_rewards = asset(0, core_symbol());
+            v.claimed_rewards = asset(0, core_symbol());
+         }
 
-      CHECK(_gstate.total_vote_stake >= vote_staked, "Total vote stake insufficent")
-      _gstate.total_vote_stake -= vote_staked;
+         if (!is_adding) { // subvote
+            CHECK( v.votes >= vote_staked.amount, "votes insufficent" )
+            vote_refund_table vote_refund_tbl( get_self(), voter.value );
+            CHECK( vote_refund_tbl.find( voter.value ) == vote_refund_tbl.end(), "This account already has a vote refund" );
 
-      // CHECKC( time_point(voter_itr->last_unvoted_time) + seconds(vote_interval_sec) < now, err::VOTE_ERROR, "Voter can only vote or subvote once a day" )
+            vote_refund_tbl.emplace( voter, [&]( auto& r ) {
+               r.owner = voter;
+               r.vote_staked = vote_staked;
+               r.request_time = now;
+            });
 
-      vote_refund_table vote_refund_tbl( get_self(), voter.value );
-      CHECKC( vote_refund_tbl.find( voter.value ) == vote_refund_tbl.end(), err::VOTE_REFUND_ERROR, "This account already has a vote refund" );
+            v.last_unvoted_time  = now; // update last_unvoted_time
 
-      // update_producer_votes(voter_itr->producers, -votes, false);
+            // TODO: how to auto refund?
+            // static const name act_name = "voterefund"_n;
+            // uint128_t trx_send_id = uint128_t(act_name.value) << 64 | voter.value;
+            // eosio::transaction refund_trx;
+            // auto pl = permission_level{ voter, active_permission };
+            // refund_trx.actions.emplace_back( pl, _self, act_name, voter );
+            // refund_trx.delay_sec = refund_delay_sec;
+            // refund_trx.send( trx_send_id, voter, true );
 
-      _voters.modify( voter_itr, same_payer, [&]( auto& v ) {
-         v.votes             -= votes;
-         v.last_unvoted_time  = now;
+         }
+
+         int64_t votes_delta = is_adding ? vote_staked.amount : -vote_staked.amount;
+
+         if (v.producers.size() > 0) {
+            for (voted_producer_info& p : v.producers) {
+               int64_t new_shared_rewards = 0;
+               int128_t new_rewards_per_vote = 0;
+               calc_shared_rewards(_producers, p.producer_name, p.last_rewards_per_vote, voter_itr->votes,
+                  votes_delta,  new_shared_rewards, new_rewards_per_vote);
+
+               p.last_rewards_per_vote = new_rewards_per_vote; // update voter's producer voted info
+            }
+         }
+
+         v.votes        += votes_delta;
+         ASSERT(v.votes >= 0)
+
+         // v.update_at    = now;
       });
-
-      // flon::flon_reward::subvote_action subvote_act{ reward_account, { {get_self(), active_permission}, {voter, active_permission} } };
-      // subvote_act.send( voter, votes );
-
-      vote_refund_tbl.emplace( voter, [&]( auto& r ) {
-         r.owner = voter;
-         r.vote_staked = vote_staked;
-         r.request_time = now;
-      });
-
-      static const name act_name = "voterefund"_n;
-      uint128_t trx_send_id = uint128_t(act_name.value) << 64 | voter.value;
-      eosio::transaction refund_trx;
-      auto pl = permission_level{ voter, active_permission };
-      refund_trx.actions.emplace_back( pl, _self, act_name, voter );
-      refund_trx.delay_sec = refund_delay_sec;
-      refund_trx.send( trx_send_id, voter, true );
    }
 
    void system_contract::voterefund( const name& owner ) {

@@ -343,10 +343,6 @@ namespace eosiosystem {
    struct voted_producer_info {
       name              producer_name;
       int128_t          last_rewards_per_vote = 0;
-
-      inline friend bool operator<(const voted_producer_info& a, const voted_producer_info& b)  {
-         return a.producer_name < b.producer_name;
-      }
    };
 
    // Voter info. Voter info stores information about the voter:
@@ -355,7 +351,7 @@ namespace eosiosystem {
    // - `staked` the amount staked
    struct [[eosio::table, eosio::contract("flon.system")]] voter_info {
       name                             owner;     /// the voter
-      std::set<voted_producer_info>    producers; /// the producers approved by this voter
+      std::vector<voted_producer_info> producers; /// the producers approved by this voter
       int64_t                          votes = 0;  /// elected votes
       block_timestamp                  last_unvoted_time;          /// vote updated time
       asset                            unclaimed_rewards;
@@ -983,6 +979,8 @@ namespace eosiosystem {
 
          // defined in block_info.cpp
          void add_to_blockinfo_table(const eosio::checksum256& previous_block_id, const eosio::block_timestamp timestamp) const;
+
+         void change_vote(const name& voter, const asset& vote_staked, bool is_adding);
    };
 
 }
