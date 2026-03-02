@@ -411,30 +411,6 @@ namespace eosiosystem {
       ASSERT(_gstate.total_vote_stake.amount >= 0)
 
       change_vote(voter, vote_staked, true);
-
-      // auto votes = vote_staked.amount;
-      // // eosio::token::transfer_action transfer_act{ token_account, { {voter, active_permission} } };
-      // // transfer_act.send( voter, vote_account, vote_staked, "addvote" );
-
-      // auto now = current_time_point();
-      // auto voter_itr = _voters.find( voter.value );
-      // if( voter_itr != _voters.end() ) {
-      //    if (voter_itr->producers.size() > 0) {
-      //       // update_producer_votes(voter_itr->producers, votes, false);
-      //    }
-
-      //    _voters.modify( voter_itr, same_payer, [&]( auto& v ) {
-      //       v.votes             += votes;
-      //    });
-      // } else {
-      //    _voters.emplace( voter, [&]( auto& v ) {
-      //       v.owner                    = voter;
-      //       v.votes              = votes;
-      //    });
-      // }
-
-      // flon::flon_reward::addvote_action addvote_act{ reward_account, { {get_self(), active_permission}, {voter, active_permission} } };
-      // addvote_act.send( voter, votes );
    }
 
    void system_contract::subvote( const name& voter, const asset& vote_staked ) {
