@@ -29,6 +29,7 @@
 #ifndef ASSERT
     #define ASSERT(exp) CHECK(exp, #exp)
 #endif
+#define ENABLE_VOTING_PRODUCER
 
 namespace eosiosystem {
 
@@ -106,7 +107,7 @@ namespace eosiosystem {
    static constexpr int64_t  min_activated_stake   = 150'000'000'0000;
    static constexpr int64_t  ram_gift_bytes        = 1400;
    static constexpr int64_t  min_pervote_daily_pay = 100'0000;
-   static constexpr uint32_t refund_delay_sec      = 3 * seconds_per_day;
+   static constexpr uint32_t refund_delay_sec      = 3 * 60;
 
    static constexpr uint32_t ratio_boost           = 10000;
 
@@ -745,13 +746,12 @@ namespace eosiosystem {
           *
           * @pre Voter must authorize this action
           * @pre Voter must have enough votes to substract
-          * @pre Voter can only have one substracted votes at a time (including processing of delayed refunds)
+          * @pre Voter can only have one substracted votes at a time (including processing of pending refunds)
           * @pre Voter can only update votes once a day, restricted actions: (addvote, subvote, vote)
           *
-          * @post The substracting staked will be transferred to `voter` liquid balance via a
-          *    deferred `voterefund` transaction with a delay of 3 days.
+          * @post The substracting staked will be transferred to `voter` liquid balance by calling
+          *    `voterefund` after the refund delay.
           * @post All producers `voter` account has voted for will have their votes updated immediately.
-          * @post Bandwidth and storage for the deferred transaction are billed to `voter`.
           */
          [[eosio::action]]
          void subvote( const name& voter, const asset& vote_staked );

@@ -62,6 +62,7 @@ namespace eosiosystem {
       if( timestamp.slot - _gstate.last_producer_schedule_update.slot > 120 ) {
          update_elected_producers( timestamp );
 
+         #ifdef ENABLE_NAME_BID
          if( (timestamp.slot - _gstate.last_name_close.slot) > blocks_per_day ) {
             name_bid_table bids(get_self(), get_self().value);
             auto idx = bids.get_index<"highbid"_n>();
@@ -82,6 +83,7 @@ namespace eosiosystem {
                });
             }
          }
+         #endif//ENABLE_NAME_BID
       }
       #endif//ENABLE_VOTING_PRODUCER
    }

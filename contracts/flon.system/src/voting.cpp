@@ -215,18 +215,18 @@ namespace eosiosystem {
       auto old_prod_itr = old_prods.begin();
       auto new_prod_itr = producers.begin();
       std::vector<name> removed_prods; removed_prods.reserve(old_prods.size());
-      std::vector<name> modified_prods; removed_prods.reserve(old_prods.size());
+      std::vector<name> modified_prods; modified_prods.reserve(old_prods.size());
       std::vector<name> added_prods;   added_prods.reserve(producers.size());
       while(old_prod_itr != old_prods.end() || new_prod_itr != producers.end()) {
 
          if (old_prod_itr != old_prods.end() && new_prod_itr != producers.end()) {
-            if (old_prod_itr < new_prod_itr) {
+            if (*old_prod_itr < *new_prod_itr) {
                removed_prods.push_back(*old_prod_itr);
                old_prod_itr++;
-            } else if (new_prod_itr < old_prod_itr) {
+            } else if (*new_prod_itr < *old_prod_itr) {
                added_prods.push_back(*new_prod_itr);
                new_prod_itr++;
-            } else { // new_prod_itr == old_prod_itr
+            } else { // *new_prod_itr == *old_prod_itr
                modified_prods.push_back(*old_prod_itr);
                old_prod_itr++;
                new_prod_itr++;
@@ -291,6 +291,13 @@ namespace eosiosystem {
       eosio::token::transfer_action transfer_act{ token_account, { {voter, active_permission} } };
       transfer_act.send( voter, vote_account, vote_staked, "addvote" );
 
+      asset vlon_quantity(votes, symbol(symbol_code("VLON"), vote_staked.symbol.precision()));
+      eosio::token::issue_action issue_vlon_act{ token_account, { {get_self(), active_permission} } };
+      issue_vlon_act.send( get_self(), vlon_quantity, "addvote" );
+
+      eosio::token::transfer_action transfer_vlon_act{ token_account, { {get_self(), active_permission} } };
+      transfer_vlon_act.send( get_self(), voter, vlon_quantity, "addvote" );
+
       auto now = current_time_point();
       auto voter_itr = _voters.find( voter.value );
       if( voter_itr != _voters.end() ) {
@@ -335,6 +342,13 @@ namespace eosiosystem {
       vote_refund_table vote_refund_tbl( get_self(), voter.value );
       CHECKC( vote_refund_tbl.find( voter.value ) == vote_refund_tbl.end(), err::VOTE_REFUND_ERROR, "This account already has a vote refund" );
 
+      asset vlon_quantity(votes, symbol(symbol_code("VLON"), vote_staked.symbol.precision()));
+      eosio::token::transfer_action return_vlon_act{ token_account, { {voter, active_permission} } };
+      return_vlon_act.send( voter, get_self(), vlon_quantity, "subvote" );
+
+      eosio::token::retire_action retire_vlon_act{ token_account, { {get_self(), active_permission} } };
+      retire_vlon_act.send( vlon_quantity, "subvote" );
+
       update_producer_votes(voter_itr->producers, -votes, false);
 
       _voters.modify( voter_itr, same_payer, [&]( auto& v ) {
@@ -351,13 +365,6 @@ namespace eosiosystem {
          r.request_time = now;
       });
 
-      static const name act_name = "voterefund"_n;
-      uint128_t trx_send_id = uint128_t(act_name.value) << 64 | voter.value;
-      eosio::transaction refund_trx;
-      auto pl = permission_level{ voter, active_permission };
-      refund_trx.actions.emplace_back( pl, _self, act_name, voter );
-      refund_trx.delay_sec = refund_delay_sec;
-      refund_trx.send( trx_send_id, voter, true );
    }
 
    void system_contract::voterefund( const name& owner ) {
