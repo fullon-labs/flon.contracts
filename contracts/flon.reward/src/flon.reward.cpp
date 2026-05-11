@@ -23,16 +23,16 @@ struct flon_token {
       using transfer_action = eosio::action_wrapper<"transfer"_n, &flon_token::transfer>;
 };
 
-#define TRANSFER_OUT(token_contract, to, quantity, memo)                             \
-            flon_token::transfer_action(token_contract, {{get_self(), ACTIVE_PERM}}) \
-               .send(get_self(), to, quantity, memo);
+#define TRANSFER_OUT(token_contract, to, quantity, memo)                            \
+   flon_token::transfer_action(token_contract, {{get_self(), ACTIVE_PERM}})         \
+      .send(get_self(), to, quantity, memo);
 
 
 namespace db {
 
     template<typename table, typename Lambda>
     inline void set(table &tbl,  typename table::const_iterator& itr, const eosio::name& emplaced_payer,
-            const eosio::name& modified_payer, Lambda&& setter )
+                    const eosio::name& modified_payer, Lambda&& setter )
    {
         if (itr == tbl.end()) {
             tbl.emplace(emplaced_payer, [&]( auto& p ) {
@@ -47,10 +47,10 @@ namespace db {
 
     template<typename table, typename Lambda>
     inline void set(table &tbl,  typename table::const_iterator& itr, const eosio::name& emplaced_payer,
-               Lambda&& setter )
-   {
+                    Lambda&& setter )
+    {
       set(tbl, itr, emplaced_payer, eosio::same_payer, setter);
-   }
+    }
 
 }// namespace db
 
@@ -214,9 +214,18 @@ void flon_reward::ontransfer(    const name &from,
       _gstate.total_rewards += quantity;
       _global.set(_gstate, get_self());
 
-      auto prod_itr = _producer_tbl.find(from.value);
-      check(prod_itr != _producer_tbl.end(), "producer(from) not found");
-      check(prod_itr->is_registered, "producer(from) not registered");
+      // Parse producer name from memo (for rewards from flon system contract)
+      // Or use 'from' if memo is empty (for direct transfers from producers)
+      name producer_name;
+      if (!memo.empty()) {
+         producer_name = name(memo);
+      } else {
+         producer_name = from;
+      }
+
+      auto prod_itr = _producer_tbl.find(producer_name.value);
+      check(prod_itr != _producer_tbl.end(), "producer not found");
+      check(prod_itr->is_registered, "producer not registered");
       _producer_tbl.modify(prod_itr, same_payer, [&]( auto& p ) {
          p.total_rewards         += quantity;
          p.allocating_rewards   += quantity;
@@ -255,14 +264,13 @@ void flon_reward::change_vote(const name& voter, int64_t votes, bool is_adding) 
 }
 
 void flon_reward::allocate_producer_rewards(voted_producer_map& producers, int64_t votes_old,
-         int64_t votes_delta, const name& new_payer, asset &allocated_rewards_out)
+                                                                                    int64_t votes_delta, const name& new_payer, asset &allocated_rewards_out)
 {
 
    auto now = eosio::current_time_point();
    for ( auto& voted_prod : producers) {
       const auto& prod_name = voted_prod.first;
       auto& last_rewards_per_vote = voted_prod.second.last_rewards_per_vote; // will be updated below
-
       auto prod_itr = _producer_tbl.find(prod_name.value);
       db::set(_producer_tbl, prod_itr, new_payer, same_payer, [&]( auto& p, bool is_new ) {
          if (is_new) {

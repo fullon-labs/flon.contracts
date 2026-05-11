@@ -69,15 +69,12 @@ namespace eosiosystem {
             auto highest = idx.lower_bound( std::numeric_limits<uint64_t>::max()/2 );
             if( highest != idx.end() &&
                 highest->high_bid > 0 &&
-                (current_time_point() - highest->last_bid_time) > microseconds(useconds_per_day)
-            ) {
+                (current_time_point() - highest->last_bid_time) > microseconds(useconds_per_day) ) {
                _gstate.last_name_close = timestamp;
                channel_to_system_fees( names_account, asset( highest->high_bid, core_symbol() ) );
-
                // logging
                system_contract::logsystemfee_action logsystemfee_act{ get_self(), { {get_self(), active_permission} } };
                logsystemfee_act.send( names_account, asset( highest->high_bid, core_symbol() ), "buy name" );
-
                idx.modify( highest, same_payer, [&]( auto& b ){
                   b.high_bid = -b.high_bid;
                });
@@ -91,11 +88,44 @@ namespace eosiosystem {
    #ifdef ENABLE_VOTING_PRODUCER
    void system_contract::claimrewards( const name& owner ) {
       require_auth( owner );
-      check(false, "unsupport claimrewards currently");
+
+      auto prod = _producers.find( owner.value );
+      check( prod != _producers.end(), "producer not found" );
+      check( prod->unclaimed_rewards.amount > 0, "no rewards to claim" );
+
+      asset rewards = prod->unclaimed_rewards;
+
+      // Calculate shared rewards for voters (if reward_shared_ratio > 0)
+      asset shared_rewards(0, rewards.symbol);
+      if (prod->reward_shared_ratio > 0) {
+         int64_t shared_amount = rewards.amount * prod->reward_shared_ratio / 10000;
+         shared_rewards.amount = shared_amount;
+      }
+
+      // Calculate producer's actual rewards (total - shared)
+      asset producer_rewards = rewards - shared_rewards;
+
+      // Update producer/global state before inline transfers to avoid re-entrant duplicate claims.
+      _producers.modify( prod, same_payer, [&](auto& p ) {
+         p.unclaimed_rewards.amount = 0;
+         p.last_claim_time = current_time_point();
+      });
+      _gstate.total_unclaimed_rewards.amount -= rewards.amount;
+
+      // Transfer shared rewards to flon.reward contract on behalf of producer.
+      if (shared_rewards.amount > 0) {
+         token::transfer_action transfer_act( token_account, {{get_self(), active_permission}} );
+         transfer_act.send( get_self(), "flon.reward"_n, shared_rewards, owner.to_string() );
+      }
+
+      // Transfer producer rewards to owner.
+      if (producer_rewards.amount > 0) {
+         token::transfer_action transfer_act( token_account, {{get_self(), active_permission}} );
+         transfer_act.send( get_self(), owner, producer_rewards, "producer rewards" );
+      }
    }
 
    void system_contract::cfgelection( const time_point& election_activated_time, const time_point& reward_started_time, const asset& initial_rewards_per_block) {
-
       require_auth(get_self());
 
       const auto& core_symb = core_symbol();
@@ -112,16 +142,16 @@ namespace eosiosystem {
       }
 
       check(reward_started_time >= _gstate.election_activated_time, "reward start time can not less than election activated time");
-
       if (_gstate.reward_started_time == time_point() || _gstate.reward_started_time > now ) {
          check(reward_started_time > now, "reward start time must larger than now");
          _gstate.reward_started_time = reward_started_time;
+         _gstate.initial_rewards_per_block = initial_rewards_per_block;
       } else {
          check( reward_started_time == _gstate.reward_started_time,
-            "can not change reward start timee after reward has already been started");
+            "can not change reward start time after reward has already been started");
+         check( initial_rewards_per_block == _gstate.initial_rewards_per_block,
+            "can not change initial rewards per block after reward has already been started");
       }
-
-      _gstate.initial_rewards_per_block = initial_rewards_per_block;
    }
    #endif//ENABLE_VOTING_PRODUCER
 } //namespace eosiosystem

@@ -171,7 +171,7 @@ namespace flon {
          */
          struct [[eosio::table]] voter {
             name                       owner;
-            int64_t                    votes;
+            int64_t                    votes = 0;
             voted_producer_map         producers;
             asset                      unclaimed_rewards;
             asset                      claimed_rewards;

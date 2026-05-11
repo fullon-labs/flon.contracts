@@ -492,10 +492,11 @@ namespace eosiosystem {
           * - election_activated_time can not be change when election was already been initialized
           * - reward_started_time can not less than election_activated_time
           * - reward_started_time can not less than now when reward wasn’t already been started
-          * - reward_started_time it can not be change when reward was already been started
+          * - reward_started_time can not be changed when reward was already started
+          * - initial_rewards_per_block can not be changed when reward was already started
           *
           * @param election_activated_time - election activated time
-          * @param core - reward per block.
+          * @param initial_rewards_per_block - reward per block.
           */
          [[eosio::action]]
          void cfgelection( const time_point& election_activated_time, const time_point& reward_started_time, const asset& initial_rewards_per_block);
