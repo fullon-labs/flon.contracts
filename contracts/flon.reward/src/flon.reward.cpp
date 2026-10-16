@@ -134,6 +134,7 @@ void flon_reward::voteproducer( const name& voter, const std::vector<name>& prod
 
       voted_producer_map added_prods;
       voted_producer_map removed_prods;
+      const auto old_producer_count = v.producers.size();
 
       auto new_prod_itr = producers.begin();
       auto old_prod_itr = v.producers.begin();
@@ -149,7 +150,6 @@ void flon_reward::voteproducer( const name& voter, const std::vector<name>& prod
                added_prods[*new_prod_itr] = {};
                new_prod_itr++;
             } else { // old_prod_itr->first == (*new_prod_itr))
-               // old is keeped in v.producers, new is discarded
                old_prod_itr++;
                new_prod_itr++;
             }
@@ -164,9 +164,12 @@ void flon_reward::voteproducer( const name& voter, const std::vector<name>& prod
          }
       }
 
-      allocate_producer_rewards(removed_prods, v.votes, -v.votes, voter, v.unclaimed_rewards);
-      allocate_producer_rewards(v.producers, v.votes, 0, voter, v.unclaimed_rewards);
-      allocate_producer_rewards(added_prods, 0, v.votes, voter, v.unclaimed_rewards);
+      const int64_t old_weight = old_producer_count == 0 ? 0 : v.votes / static_cast<int64_t>(old_producer_count);
+      const int64_t new_weight = producers.empty() ? 0 : v.votes / static_cast<int64_t>(producers.size());
+
+      allocate_producer_rewards(removed_prods, old_weight, -old_weight, voter, v.unclaimed_rewards);
+      allocate_producer_rewards(v.producers, old_weight, new_weight - old_weight, voter, v.unclaimed_rewards);
+      allocate_producer_rewards(added_prods, 0, new_weight, voter, v.unclaimed_rewards);
       for (auto& added_prod : added_prods) {
          v.producers.emplace(added_prod);
       }
@@ -187,7 +190,8 @@ void flon_reward::claim_rewards( const name& voter ) {
 
    _voter_tbl.modify(voter_itr, voter, [&]( auto& v) {
       if (voter_itr->votes > 0) {
-         allocate_producer_rewards(v.producers, v.votes, 0, voter, v.unclaimed_rewards);
+         const int64_t allocated_weight = v.producers.empty() ? 0 : v.votes / static_cast<int64_t>(v.producers.size());
+         allocate_producer_rewards(v.producers, allocated_weight, 0, voter, v.unclaimed_rewards);
       }
       check(v.unclaimed_rewards.amount > 0, "no rewards to claim");
 
@@ -255,7 +259,11 @@ void flon_reward::change_vote(const name& voter, int64_t votes, bool is_adding) 
          CHECK(v.votes >= votes, "voter's votes insufficent")
          votes_delta = -votes;
       }
-      allocate_producer_rewards(v.producers, v.votes, votes_delta, voter, v.unclaimed_rewards);
+      const int64_t old_weight = v.producers.empty() ? 0 : v.votes / static_cast<int64_t>(v.producers.size());
+      const int64_t new_votes = v.votes + votes_delta;
+      CHECK(new_votes >= 0, "voter's votes can not be negative")
+      const int64_t new_weight = v.producers.empty() ? 0 : new_votes / static_cast<int64_t>(v.producers.size());
+      allocate_producer_rewards(v.producers, old_weight, new_weight - old_weight, voter, v.unclaimed_rewards);
       v.votes        += votes_delta;
       CHECK(v.votes >= 0, "voter's votes can not be negative")
 
@@ -263,8 +271,8 @@ void flon_reward::change_vote(const name& voter, int64_t votes, bool is_adding) 
    });
 }
 
-void flon_reward::allocate_producer_rewards(voted_producer_map& producers, int64_t votes_old,
-                                                                                    int64_t votes_delta, const name& new_payer, asset &allocated_rewards_out)
+void flon_reward::allocate_producer_rewards(voted_producer_map& producers, int64_t weight_old,
+                                                                                    int64_t weight_delta, const name& new_payer, asset &allocated_rewards_out)
 {
 
    auto now = eosio::current_time_point();
@@ -282,9 +290,9 @@ void flon_reward::allocate_producer_rewards(voted_producer_map& producers, int64
 
          CHECK(p.rewards_per_vote >= last_rewards_per_vote, "last_rewards_per_vote invalid");
          int128_t rewards_per_vote_delta = p.rewards_per_vote - last_rewards_per_vote;
-         if (rewards_per_vote_delta > 0 && votes_old > 0) {
-            ASSERT(votes_old <= p.votes)
-            asset new_rewards = calc_voter_rewards(votes_old, rewards_per_vote_delta);
+         if (rewards_per_vote_delta > 0 && weight_old > 0) {
+            ASSERT(weight_old <= p.votes)
+            asset new_rewards = calc_voter_rewards(weight_old, rewards_per_vote_delta);
             CHECK(p.allocating_rewards >= new_rewards, "producer allocating rewards insufficient");
             p.allocating_rewards -= new_rewards;
             p.allocated_rewards += new_rewards;
@@ -294,7 +302,7 @@ void flon_reward::allocate_producer_rewards(voted_producer_map& producers, int64
             allocated_rewards_out += new_rewards; // update allocated_rewards for voter
          }
 
-         p.votes += votes_delta;
+         p.votes += weight_delta;
          CHECK(p.votes >= 0, "producer votes can not be negative")
          p.update_at = now;
 

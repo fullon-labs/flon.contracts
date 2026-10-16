@@ -211,38 +211,7 @@ namespace eosiosystem {
       auto now = current_time_point();
       // CHECK( time_point(voter_itr->last_unvoted_time) + seconds(vote_interval_sec) < now, "Voter can only vote or subvote once a day" )
 
-      const auto& old_prods = voter_itr->producers;
-      auto old_prod_itr = old_prods.begin();
-      auto new_prod_itr = producers.begin();
-      std::vector<name> removed_prods; removed_prods.reserve(old_prods.size());
-      std::vector<name> modified_prods; modified_prods.reserve(old_prods.size());
-      std::vector<name> added_prods;   added_prods.reserve(producers.size());
-      while(old_prod_itr != old_prods.end() || new_prod_itr != producers.end()) {
-
-         if (old_prod_itr != old_prods.end() && new_prod_itr != producers.end()) {
-            if (*old_prod_itr < *new_prod_itr) {
-               removed_prods.push_back(*old_prod_itr);
-               old_prod_itr++;
-            } else if (*new_prod_itr < *old_prod_itr) {
-               added_prods.push_back(*new_prod_itr);
-               new_prod_itr++;
-            } else { // *new_prod_itr == *old_prod_itr
-               modified_prods.push_back(*old_prod_itr);
-               old_prod_itr++;
-               new_prod_itr++;
-            }
-         } else if ( old_prod_itr != old_prods.end() ) { //  && new_prod_itr == producers.end()
-               removed_prods.push_back(*old_prod_itr);
-               old_prod_itr++;
-         } else { // new_prod_itr != producers.end() && old_prod_itr == old_prods.end()
-               added_prods.push_back(*new_prod_itr);
-               new_prod_itr++;
-         }
-      }
-
-      update_producer_votes(removed_prods, -voter_itr->votes, false);
-      update_producer_votes(modified_prods, 0, false);
-      update_producer_votes(added_prods, voter_itr->votes, false);
+      update_vote_allocations( voter_itr->producers, voter_itr->votes, producers, voter_itr->votes );
 
       flon::flon_reward::voteproducer_action voteproducer_act{ reward_account, { {get_self(), active_permission}, {voter_name, active_permission} } };
       voteproducer_act.send( voter_name, producers );
@@ -253,9 +222,35 @@ namespace eosiosystem {
       });
    }
 
-   void system_contract::update_producer_votes(  const std::vector<name>& producers,
-                                                         int64_t votes_delta,
-                                                         bool is_adding) {
+   void system_contract::update_vote_allocations( const std::vector<name>& old_producers, int64_t old_votes,
+                                                   const std::vector<name>& new_producers, int64_t new_votes ) {
+      ASSERT( old_votes >= 0 && new_votes >= 0 )
+
+      // One locked-token unit creates at most one aggregate unit of ranking power.
+      // Integer division intentionally leaves the remainder unallocated.
+      const int64_t old_weight = old_producers.empty() ? 0 : old_votes / static_cast<int64_t>(old_producers.size());
+      const int64_t new_weight = new_producers.empty() ? 0 : new_votes / static_cast<int64_t>(new_producers.size());
+
+      auto old_itr = old_producers.begin();
+      auto new_itr = new_producers.begin();
+      while( old_itr != old_producers.end() || new_itr != new_producers.end() ) {
+         if( new_itr == new_producers.end() ||
+             (old_itr != old_producers.end() && *old_itr < *new_itr) ) {
+            update_producer_votes( {*old_itr}, -old_weight );
+            ++old_itr;
+         } else if( old_itr == old_producers.end() || *new_itr < *old_itr ) {
+            update_producer_votes( {*new_itr}, new_weight );
+            ++new_itr;
+         } else {
+            update_producer_votes( {*old_itr}, new_weight - old_weight );
+            ++old_itr;
+            ++new_itr;
+         }
+      }
+   }
+
+   void system_contract::update_producer_votes( const std::vector<name>& producers,
+                                                int64_t votes_delta ) {
       for( const auto& p : producers ) {
          auto pitr = _producers.find( p.value );
 
@@ -301,9 +296,8 @@ namespace eosiosystem {
       auto now = current_time_point();
       auto voter_itr = _voters.find( voter.value );
       if( voter_itr != _voters.end() ) {
-         if (voter_itr->producers.size() > 0) {
-            update_producer_votes(voter_itr->producers, votes, false);
-         }
+         update_vote_allocations( voter_itr->producers, voter_itr->votes,
+                                  voter_itr->producers, voter_itr->votes + votes );
 
          _voters.modify( voter_itr, same_payer, [&]( auto& v ) {
             v.votes             += votes;
@@ -349,7 +343,8 @@ namespace eosiosystem {
       eosio::token::retire_action retire_vlon_act{ token_account, { {get_self(), active_permission} } };
       retire_vlon_act.send( vlon_quantity, "subvote" );
 
-      update_producer_votes(voter_itr->producers, -votes, false);
+      update_vote_allocations( voter_itr->producers, voter_itr->votes,
+                               voter_itr->producers, voter_itr->votes - votes );
 
       _voters.modify( voter_itr, same_payer, [&]( auto& v ) {
          v.votes             -= votes;

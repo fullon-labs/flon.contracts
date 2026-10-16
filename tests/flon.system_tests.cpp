@@ -1274,9 +1274,11 @@ BOOST_FIXTURE_TEST_CASE( vote_for_two_producers, eosio_system_tester, * boost::u
    BOOST_REQUIRE_EQUAL( success(), vote( "carol1111111"_n, { "alice1111111"_n, "bob111111111"_n } ) );
 
    auto alice_info = get_producer_info( "alice1111111" );
-   BOOST_TEST_REQUIRE( stake2votes(core_sym::from_string("20.0005")) == alice_info["total_votes"].as_int64() );
+   // One account's aggregate voting power is divided equally across its selections.
+   // The indivisible 0.0001 remainder is intentionally left unallocated.
+   BOOST_TEST_REQUIRE( stake2votes(core_sym::from_string("10.0002")) == alice_info["total_votes"].as_int64() );
    auto bob_info = get_producer_info( "bob111111111" );
-   BOOST_TEST_REQUIRE( stake2votes(core_sym::from_string("20.0005")) == bob_info["total_votes"].as_int64() );
+   BOOST_TEST_REQUIRE( stake2votes(core_sym::from_string("10.0002")) == bob_info["total_votes"].as_int64() );
 
    //carol1111111 votes for alice1111111 (but revokes vote for bob111111111)
    BOOST_REQUIRE_EQUAL( success(), vote( "carol1111111"_n, { "alice1111111"_n } ) );
@@ -1292,10 +1294,19 @@ BOOST_FIXTURE_TEST_CASE( vote_for_two_producers, eosio_system_tester, * boost::u
    BOOST_REQUIRE_EQUAL( success(), vote("alice1111111"_n, { "alice1111111"_n, "bob111111111"_n } ) );
 
    alice_info = get_producer_info( "alice1111111" );
-   BOOST_TEST_REQUIRE( stake2votes(core_sym::from_string("22.0005")) == alice_info["total_votes"].as_int64() );
+   BOOST_TEST_REQUIRE( stake2votes(core_sym::from_string("21.0005")) == alice_info["total_votes"].as_int64() );
 
    bob_info = get_producer_info( "bob111111111" );
-   BOOST_TEST_REQUIRE( stake2votes(core_sym::from_string("2.0000")) == bob_info["total_votes"].as_int64() );
+   BOOST_TEST_REQUIRE( stake2votes(core_sym::from_string("1.0000")) == bob_info["total_votes"].as_int64() );
+
+   // Adding stake while keeping two selections must recompute both retained allocations.
+   issue_and_transfer( "alice1111111", core_sym::from_string("1.0001"), config::system_account_name );
+   BOOST_REQUIRE_EQUAL( success(), addvote( "alice1111111", core_sym::from_string("1.0001") ) );
+
+   alice_info = get_producer_info( "alice1111111" );
+   BOOST_TEST_REQUIRE( stake2votes(core_sym::from_string("21.5005")) == alice_info["total_votes"].as_int64() );
+   bob_info = get_producer_info( "bob111111111" );
+   BOOST_TEST_REQUIRE( stake2votes(core_sym::from_string("1.5000")) == bob_info["total_votes"].as_int64() );
 
 } FC_LOG_AND_RETHROW()
 

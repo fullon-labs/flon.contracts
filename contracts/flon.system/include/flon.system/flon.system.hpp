@@ -695,8 +695,8 @@ namespace eosiosystem {
           * @pre Voter must have previously staked some EOS for voting
           * @pre Voter->staked must be up to date
           *
-          * @post Every producer previously voted for will have vote reduced by previous vote weight
-          * @post Every producer newly voted for will have vote increased by new vote amount
+          * @post Previous allocations are removed and the voter's aggregate vote amount is divided equally
+          *       among the newly selected producers. Integer remainder stays unallocated.
           */
          [[eosio::action]]
          void voteproducer( const name& voter, const std::vector<name>& producers );
@@ -942,8 +942,9 @@ namespace eosiosystem {
          void register_producer( const name& producer, const eosio::block_signing_authority& producer_authority,
                                  const std::string& url, uint16_t location, optional<uint32_t> reward_shared_ratio );
          void update_elected_producers( const block_timestamp& timestamp );
-         void update_producer_votes( const std::vector<name>& producers, int64_t votes_delta,
-                                             bool is_adding);
+         void update_vote_allocations( const std::vector<name>& old_producers, int64_t old_votes,
+                                       const std::vector<name>& new_producers, int64_t new_votes );
+         void update_producer_votes( const std::vector<name>& producers, int64_t votes_delta );
 
          // defined in finalizer_key.cpp
          bool is_savanna_consensus();

@@ -23,6 +23,8 @@ Vote for a block producer
 
 Assume you are going to vote for blockproducer1 and blockproducer2 from an account called `eosiotestts2`, execute the following:
 
+If the account has 10,000 units of voting power, this selection allocates 5,000 units to each producer. The 10,000 units are not copied to both producers.
+
 ```bash
 fucli system voteproducer prods eosiotestts2 blockproducer1 blockproducer2
 ```

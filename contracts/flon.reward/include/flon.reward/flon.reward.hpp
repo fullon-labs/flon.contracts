@@ -93,6 +93,7 @@ namespace flon {
           *
           * @param voter - the account to change the voted producers for,
           * @param producers - the list of producers to vote for, a maximum of 30 producers is allowed.
+          * The voter's aggregate reward weight is divided equally among the selected producers.
           */
          [[eosio::action]]
          void voteproducer( const name& voter, const std::vector<name>& producers );
@@ -198,7 +199,7 @@ namespace flon {
       producer::table         _producer_tbl;
 
       void claim_rewards( const name& voter );
-      void allocate_producer_rewards(voted_producer_map& producers, int64_t votes_old, int64_t votes_delta, const name& new_payer, asset &allocated_rewards_out);
+      void allocate_producer_rewards(voted_producer_map& producers, int64_t weight_old, int64_t weight_delta, const name& new_payer, asset &allocated_rewards_out);
       void change_vote(const name& voter, int64_t votes, bool is_adding);
       void check_init() const;
       const symbol& core_symbol() const;
