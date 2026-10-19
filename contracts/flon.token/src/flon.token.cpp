@@ -93,6 +93,16 @@ void token::transfer( const name&    from,
     stats statstable( get_self(), sym.raw() );
     const auto& st = statstable.get( sym.raw() );
 
+    // GLON is an account-bound governance receipt. It may only move between
+    // its issuer (the system contract) and the receipt owner so that selling
+    // GLON cannot transfer vote or redemption rights to another account.
+    if( sym == symbol_code("GLON") ) {
+       check( from == st.issuer || to == st.issuer,
+              "GLON is non-transferable; only issuer mint and redemption transfers are allowed" );
+       check( has_auth(st.issuer),
+              "GLON transfers require issuer authorization" );
+    }
+
     require_recipient( from );
     require_recipient( to );
 

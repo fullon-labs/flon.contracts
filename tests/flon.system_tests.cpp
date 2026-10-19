@@ -1040,6 +1040,8 @@ BOOST_FIXTURE_TEST_CASE( vote_for_producer, eosio_system_tester, * boost::unit_t
    //bob111111111 makes stake
    BOOST_REQUIRE_EQUAL( success(), addvote( "bob111111111", core_sym::from_string("11.0000"), core_sym::from_string("0.1111") ) );
    BOOST_REQUIRE_EQUAL( core_sym::from_string("1988.8889"), get_balance( "bob111111111" ) );
+   BOOST_REQUIRE_EQUAL( asset::from_string("11.1111 GLON"),
+                        get_balance( "bob111111111", symbol(symbol_code("GLON"), 4) ) );
    REQUIRE_MATCHING_OBJECT( voter( "bob111111111", core_sym::from_string("11.1111") ), get_voter_info( "bob111111111" ) );
 
    //bob111111111 votes for alice1111111
@@ -1072,6 +1074,8 @@ BOOST_FIXTURE_TEST_CASE( vote_for_producer, eosio_system_tester, * boost::unit_t
 
    //carol1111111 unstakes part of the stake
    BOOST_REQUIRE_EQUAL( success(), subvote( "carol1111111", core_sym::from_string("2.0000"), core_sym::from_string("0.0002")/*"2.0000 EOS", "0.0002 EOS"*/ ) );
+   BOOST_REQUIRE_EQUAL( asset::from_string("20.2220 GLON"),
+                        get_balance( "carol1111111", symbol(symbol_code("GLON"), 4) ) );
 
    //should decrease alice1111111's total_votes
    prod = get_producer_info( "alice1111111" );

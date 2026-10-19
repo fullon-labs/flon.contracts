@@ -159,6 +159,22 @@ BOOST_FIXTURE_TEST_CASE( symbol_already_exists, eosio_token_tester ) try {
 
 } FC_LOG_AND_RETHROW()
 
+BOOST_FIXTURE_TEST_CASE( glon_is_non_transferable, eosio_token_tester ) try {
+   BOOST_REQUIRE_EQUAL( success(), create( "alice"_n, asset::from_string("1000.0000 GLON") ) );
+   BOOST_REQUIRE_EQUAL( success(), issue( "alice"_n, asset::from_string("10.0000 GLON"), "governance receipt" ) );
+   BOOST_REQUIRE_EQUAL( success(), transfer( "alice"_n, "bob"_n, asset::from_string("10.0000 GLON"), "mint receipt" ) );
+
+   BOOST_REQUIRE_EQUAL(
+      wasm_assert_msg( "GLON is non-transferable; only issuer mint and redemption transfers are allowed" ),
+      transfer( "bob"_n, "carol"_n, asset::from_string("1.0000 GLON"), "not allowed" )
+   );
+
+   BOOST_REQUIRE_EQUAL(
+      wasm_assert_msg( "GLON transfers require issuer authorization" ),
+      transfer( "bob"_n, "alice"_n, asset::from_string("10.0000 GLON"), "bypass unstake" )
+   );
+} FC_LOG_AND_RETHROW()
+
 BOOST_FIXTURE_TEST_CASE( create_max_supply, eosio_token_tester ) try {
 
    auto token = create( "alice"_n, asset::from_string("4611686018427387903 TKN"));

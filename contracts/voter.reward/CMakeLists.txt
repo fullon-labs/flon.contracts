@@ -1,4 +1,4 @@
-set(contract_name flon.reward)
+set(contract_name voter.reward)
 add_contract(${contract_name} ${contract_name} ${CMAKE_CURRENT_SOURCE_DIR}/src/${contract_name}.cpp)
 
 target_include_directories(${contract_name}

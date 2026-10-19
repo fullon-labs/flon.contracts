@@ -20,7 +20,7 @@ class eosio_msig_tester : public tester {
 public:
    eosio_msig_tester() {
       create_accounts( { "flon.msig"_n, "flon.stake"_n, "flon.ram"_n, "flon.fees"_n, "alice"_n, "bob"_n, "carol"_n ,
-               "flon.reward"_n, "flon.vote"_n } );
+               "voter.reward"_n, "flon.vote"_n } );
       produce_block();
 
       auto trace = base_tester::push_action(config::system_account_name, "setpriv"_n,
@@ -427,14 +427,15 @@ BOOST_FIXTURE_TEST_CASE( update_system_contract_all_approve, eosio_msig_tester )
    set_producers( {"alice"_n,"bob"_n,"carol"_n} );
    produce_blocks(50);
 
-   set_code( "flon.reward"_n, contracts::reward_wasm());
-   set_abi( "flon.reward"_n, contracts::reward_abi().data() );
+   set_code( "voter.reward"_n, contracts::voter_reward_wasm());
+   set_abi( "voter.reward"_n, contracts::voter_reward_abi().data() );
 
    create_accounts( { "flon.token"_n } );
    set_code( "flon.token"_n, contracts::token_wasm() );
    set_abi( "flon.token"_n, contracts::token_abi().data() );
 
    create_currency( "flon.token"_n, config::system_account_name, core_sym::from_string("10000000000.0000") );
+   create_currency( "flon.token"_n, config::system_account_name, asset::from_string("10000000000.0000 GLON") );
    issue(config::system_account_name, core_sym::from_string("1000000000.0000"));
    BOOST_REQUIRE_EQUAL( core_sym::from_string("1000000000.0000"),
                         get_balance(config::system_account_name) + get_balance("flon.stake"_n) + get_balance("flon.ram"_n) );
@@ -551,14 +552,15 @@ BOOST_FIXTURE_TEST_CASE( update_system_contract_major_approve, eosio_msig_tester
    set_producers( {"alice"_n,"bob"_n,"carol"_n, "apple"_n} );
    produce_blocks(50);
 
-   set_code( "flon.reward"_n, contracts::reward_wasm());
-   set_abi( "flon.reward"_n, contracts::reward_abi().data() );
+   set_code( "voter.reward"_n, contracts::voter_reward_wasm());
+   set_abi( "voter.reward"_n, contracts::voter_reward_abi().data() );
 
    create_accounts( { "flon.token"_n} );
    set_code( "flon.token"_n, contracts::token_wasm() );
    set_abi( "flon.token"_n, contracts::token_abi().data() );
 
    create_currency( "flon.token"_n, config::system_account_name, core_sym::from_string("10000000000.0000") );
+   create_currency( "flon.token"_n, config::system_account_name, asset::from_string("10000000000.0000 GLON") );
    issue(config::system_account_name, core_sym::from_string("1000000000.0000"));
    BOOST_REQUIRE_EQUAL( core_sym::from_string("1000000000.0000"), get_balance( config::system_account_name ) );
 

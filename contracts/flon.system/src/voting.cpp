@@ -9,7 +9,7 @@
 
 #include <flon.system/flon.system.hpp>
 #include <flon.token/flon.token.hpp>
-#include <flon.reward/flon.reward.hpp>
+#include <voter.reward/voter.reward.hpp>
 
 #include <type_traits>
 #include <limits>
@@ -26,6 +26,14 @@ namespace eosiosystem {
    using eosio::seconds;
    using eosio::singleton;
    using std::to_string;
+
+   static uint64_t next_vote_epoch(const eosio_global_state& state) {
+      const auto now = current_time_point();
+      if (state.reward_started_time == time_point() || now < state.reward_started_time) return 0;
+      const block_timestamp now_slot(now);
+      const block_timestamp start_slot(state.reward_started_time);
+      return (now_slot.slot - start_slot.slot) / reward_epoch_slots + 1;
+   }
 
    #ifdef ENABLE_VOTING_PRODUCER
    void system_contract::register_producer(  const name& producer,
@@ -52,8 +60,8 @@ namespace eosiosystem {
          }
       }, producer_authority );
 
-      if (!flon::flon_reward::is_producer_registered(reward_account, producer)) {
-         flon::flon_reward::regproducer_action reg_act{ reward_account, { {producer, active_permission} } };
+      if (!flon::voter_reward::is_producer_registered(voter_reward_account, producer)) {
+         flon::voter_reward::regproducer_action reg_act{ voter_reward_account, { {producer, active_permission} } };
          reg_act.send( producer );
       }
 
@@ -201,25 +209,29 @@ namespace eosiosystem {
          check( producers[i - 1] < producers[i], "producer votes must be unique and sorted" );
       }
 
+      materialize_pending_vote(voter_name);
       auto voter_itr = _voters.find( voter_name.value );
       check( voter_itr != _voters.end(), "voter not found" ); /// addvote creates voter object
 
       ASSERT( voter_itr->votes >= 0 )
-      CHECKC( voter_itr->producers != producers, err::VOTE_CHANGE_ERROR, "producers no change" )
-      // if( voter_itr->producers == producers ) return;
+      pending_voters_table pending_votes(get_self(), get_self().value);
+      auto pending_itr = pending_votes.find(voter_name.value);
+      const int64_t target_votes = pending_itr == pending_votes.end()
+                                     ? voter_itr->votes : pending_itr->votes;
+      const auto& current_target = pending_itr == pending_votes.end()
+                                     ? voter_itr->producers : pending_itr->producers;
+      CHECKC( current_target != producers, err::VOTE_CHANGE_ERROR, "producers no change" )
 
       auto now = current_time_point();
       // CHECK( time_point(voter_itr->last_unvoted_time) + seconds(vote_interval_sec) < now, "Voter can only vote or subvote once a day" )
 
-      update_vote_allocations( voter_itr->producers, voter_itr->votes, producers, voter_itr->votes );
+      const uint64_t activation_epoch = next_vote_epoch(_gstate);
+      queue_vote_change(voter_name, target_votes, producers, activation_epoch);
 
-      flon::flon_reward::voteproducer_action voteproducer_act{ reward_account, { {get_self(), active_permission}, {voter_name, active_permission} } };
-      voteproducer_act.send( voter_name, producers );
+      flon::voter_reward::voteproducer_action voteproducer_act{ voter_reward_account, { {get_self(), active_permission}, {voter_name, active_permission} } };
+      voteproducer_act.send( voter_name, producers, activation_epoch );
 
-      _voters.modify( voter_itr, same_payer, [&]( auto& v ) {
-         v.producers          = producers;
-         v.last_unvoted_time  = now;
-      });
+      _voters.modify( voter_itr, same_payer, [&]( auto& v ) { v.last_unvoted_time = now; });
    }
 
    void system_contract::update_vote_allocations( const std::vector<name>& old_producers, int64_t old_votes,
@@ -270,6 +282,109 @@ namespace eosiosystem {
       }
    }
 
+   void system_contract::materialize_pending_vote( const name& voter ) {
+      pending_voters_table pending_votes(get_self(), get_self().value);
+      auto pending_itr = pending_votes.find(voter.value);
+      if (pending_itr == pending_votes.end()) return;
+
+      reward_epoch_singleton epoch_state_tbl(get_self(), get_self().value);
+      auto epoch_state = epoch_state_tbl.exists() ? epoch_state_tbl.get() : reward_epoch_state{};
+      if (pending_itr->activation_epoch > epoch_state.next_epoch_to_close) return;
+
+      auto voter_itr = _voters.find(voter.value);
+      CHECK(voter_itr != _voters.end(), "voter not found")
+      _voters.modify(voter_itr, same_payer, [&](auto& row) {
+         row.votes = pending_itr->votes;
+         row.producers = pending_itr->producers;
+      });
+      pending_votes.erase(pending_itr);
+   }
+
+   void system_contract::update_pending_vote_deltas(const std::vector<name>& old_producers,
+                                                     int64_t old_votes,
+                                                     const std::vector<name>& new_producers,
+                                                     int64_t new_votes) {
+      const int64_t old_weight = old_producers.empty()
+                                   ? 0 : old_votes / static_cast<int64_t>(old_producers.size());
+      const int64_t new_weight = new_producers.empty()
+                                   ? 0 : new_votes / static_cast<int64_t>(new_producers.size());
+      pending_vote_deltas_table deltas(get_self(), get_self().value);
+
+      auto old_itr = old_producers.begin();
+      auto new_itr = new_producers.begin();
+      while (old_itr != old_producers.end() || new_itr != new_producers.end()) {
+         name producer;
+         int64_t delta = 0;
+         if (new_itr == new_producers.end() ||
+             (old_itr != old_producers.end() && *old_itr < *new_itr)) {
+            producer = *old_itr++;
+            delta = -old_weight;
+         } else if (old_itr == old_producers.end() || *new_itr < *old_itr) {
+            producer = *new_itr++;
+            delta = new_weight;
+         } else {
+            producer = *old_itr++;
+            ++new_itr;
+            delta = new_weight - old_weight;
+         }
+
+         auto delta_itr = deltas.find(producer.value);
+         if (delta_itr == deltas.end()) {
+            deltas.emplace(get_self(), [&](auto& row) {
+               row.producer = producer;
+               row.votes_delta = delta;
+            });
+         } else {
+            deltas.modify(delta_itr, same_payer, [&](auto& row) { row.votes_delta += delta; });
+         }
+      }
+   }
+
+   void system_contract::queue_vote_change(const name& voter, int64_t votes,
+                                            const std::vector<name>& producers,
+                                            uint64_t activation_epoch) {
+      CHECK(votes >= 0, "voter's votes can not be negative")
+      pending_voters_table pending_votes(get_self(), get_self().value);
+      auto pending_itr = pending_votes.find(voter.value);
+      auto voter_itr = _voters.find(voter.value);
+      CHECK(voter_itr != _voters.end(), "voter not found")
+
+      if (activation_epoch == 0) {
+         update_vote_allocations(voter_itr->producers, voter_itr->votes, producers, votes);
+         _voters.modify(voter_itr, same_payer, [&](auto& row) {
+            row.votes = votes;
+            row.producers = producers;
+         });
+         return;
+      }
+
+      std::vector<name> old_producers;
+      int64_t old_votes = 0;
+      if (pending_itr == pending_votes.end()) {
+         old_producers = voter_itr->producers;
+         old_votes = voter_itr->votes;
+      } else {
+         old_producers = pending_itr->producers;
+         old_votes = pending_itr->votes;
+      }
+      update_pending_vote_deltas(old_producers, old_votes, producers, votes);
+
+      if (pending_itr == pending_votes.end()) {
+         pending_votes.emplace(voter, [&](auto& row) {
+            row.voter = voter;
+            row.votes = votes;
+            row.producers = producers;
+            row.activation_epoch = activation_epoch;
+         });
+      } else {
+         pending_votes.modify(pending_itr, voter, [&](auto& row) {
+            row.votes = votes;
+            row.producers = producers;
+            row.activation_epoch = activation_epoch;
+         });
+      }
+   }
+
    void system_contract::addvote( const name& voter, const asset& vote_staked ) {
       require_auth(voter);
 
@@ -286,31 +401,35 @@ namespace eosiosystem {
       eosio::token::transfer_action transfer_act{ token_account, { {voter, active_permission} } };
       transfer_act.send( voter, vote_account, vote_staked, "addvote" );
 
-      asset vlon_quantity(votes, symbol(symbol_code("VLON"), vote_staked.symbol.precision()));
-      eosio::token::issue_action issue_vlon_act{ token_account, { {get_self(), active_permission} } };
-      issue_vlon_act.send( get_self(), vlon_quantity, "addvote" );
+      asset glon_quantity(votes, symbol(symbol_code("GLON"), vote_staked.symbol.precision()));
+      eosio::token::issue_action issue_glon_act{ token_account, { {get_self(), active_permission} } };
+      issue_glon_act.send( get_self(), glon_quantity, "governance receipt for vote stake" );
 
-      eosio::token::transfer_action transfer_vlon_act{ token_account, { {get_self(), active_permission} } };
-      transfer_vlon_act.send( get_self(), voter, vlon_quantity, "addvote" );
+      eosio::token::transfer_action transfer_glon_act{ token_account, { {get_self(), active_permission} } };
+      transfer_glon_act.send( get_self(), voter, glon_quantity, "governance receipt for vote stake" );
 
-      auto now = current_time_point();
+      materialize_pending_vote(voter);
       auto voter_itr = _voters.find( voter.value );
       if( voter_itr != _voters.end() ) {
-         update_vote_allocations( voter_itr->producers, voter_itr->votes,
-                                  voter_itr->producers, voter_itr->votes + votes );
-
-         _voters.modify( voter_itr, same_payer, [&]( auto& v ) {
-            v.votes             += votes;
-         });
       } else {
          _voters.emplace( voter, [&]( auto& v ) {
             v.owner              = voter;
-            v.votes              = votes;
+            v.votes              = 0;
          });
+         voter_itr = _voters.find(voter.value);
       }
 
-      flon::flon_reward::addvote_action addvote_act{ reward_account, { {get_self(), active_permission}, {voter, active_permission} } };
-      addvote_act.send( voter, votes );
+      pending_voters_table pending_votes(get_self(), get_self().value);
+      auto pending_itr = pending_votes.find(voter.value);
+      const int64_t target_votes = (pending_itr == pending_votes.end()
+                                      ? voter_itr->votes : pending_itr->votes) + votes;
+      const auto target_producers = pending_itr == pending_votes.end()
+                                      ? voter_itr->producers : pending_itr->producers;
+      const uint64_t activation_epoch = next_vote_epoch(_gstate);
+      queue_vote_change(voter, target_votes, target_producers, activation_epoch);
+
+      flon::voter_reward::addvote_action addvote_act{ voter_reward_account, { {get_self(), active_permission}, {voter, active_permission} } };
+      addvote_act.send( voter, votes, activation_epoch );
    }
 
    void system_contract::subvote( const name& voter, const asset& vote_staked ) {
@@ -323,10 +442,17 @@ namespace eosiosystem {
       CHECK(vote_staked.amount > 0, "vote_staked must be positive")
 
       auto votes = vote_staked.amount;
+      materialize_pending_vote(voter);
       auto voter_itr = _voters.find( voter.value );
       CHECK( voter_itr != _voters.end(), "voter not found" )
 
-      CHECK( voter_itr->votes >= votes, "votes insufficent" )
+      pending_voters_table pending_votes(get_self(), get_self().value);
+      auto pending_itr = pending_votes.find(voter.value);
+      const int64_t current_target_votes = pending_itr == pending_votes.end()
+                                             ? voter_itr->votes : pending_itr->votes;
+      const auto target_producers = pending_itr == pending_votes.end()
+                                      ? voter_itr->producers : pending_itr->producers;
+      CHECK( current_target_votes >= votes, "votes insufficent" )
 
       CHECK(_gstate.total_vote_stake >= vote_staked, "Total vote stake insufficent")
       _gstate.total_vote_stake -= vote_staked;
@@ -336,23 +462,24 @@ namespace eosiosystem {
       vote_refund_table vote_refund_tbl( get_self(), voter.value );
       CHECKC( vote_refund_tbl.find( voter.value ) == vote_refund_tbl.end(), err::VOTE_REFUND_ERROR, "This account already has a vote refund" );
 
-      asset vlon_quantity(votes, symbol(symbol_code("VLON"), vote_staked.symbol.precision()));
-      eosio::token::transfer_action return_vlon_act{ token_account, { {voter, active_permission} } };
-      return_vlon_act.send( voter, get_self(), vlon_quantity, "subvote" );
+      asset glon_quantity(votes, symbol(symbol_code("GLON"), vote_staked.symbol.precision()));
+      eosio::token::transfer_action return_glon_act{
+         token_account, { {voter, active_permission}, {get_self(), active_permission} }
+      };
+      return_glon_act.send( voter, get_self(), glon_quantity, "return governance receipt" );
 
-      eosio::token::retire_action retire_vlon_act{ token_account, { {get_self(), active_permission} } };
-      retire_vlon_act.send( vlon_quantity, "subvote" );
+      eosio::token::retire_action retire_glon_act{ token_account, { {get_self(), active_permission} } };
+      retire_glon_act.send( glon_quantity, "retire governance receipt" );
 
-      update_vote_allocations( voter_itr->producers, voter_itr->votes,
-                               voter_itr->producers, voter_itr->votes - votes );
+      const uint64_t activation_epoch = next_vote_epoch(_gstate);
+      queue_vote_change(voter, current_target_votes - votes, target_producers, activation_epoch);
 
       _voters.modify( voter_itr, same_payer, [&]( auto& v ) {
-         v.votes             -= votes;
          v.last_unvoted_time  = now;
       });
 
-      flon::flon_reward::subvote_action subvote_act{ reward_account, { {get_self(), active_permission}, {voter, active_permission} } };
-      subvote_act.send( voter, votes );
+      flon::voter_reward::subvote_action subvote_act{ voter_reward_account, { {get_self(), active_permission}, {voter, active_permission} } };
+      subvote_act.send( voter, votes, activation_epoch );
 
       vote_refund_tbl.emplace( voter, [&]( auto& r ) {
          r.owner = voter;

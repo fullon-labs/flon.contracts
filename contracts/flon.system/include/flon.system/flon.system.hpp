@@ -375,6 +375,41 @@ namespace eosiosystem {
    };
 
    typedef eosio::multi_index< "voterefund"_n, vote_refund >      vote_refund_table;
+
+   static constexpr uint32_t reward_epoch_seconds = 6 * 60 * 60;
+   static constexpr uint32_t reward_epoch_slots = reward_epoch_seconds * 2;
+
+   struct [[eosio::table, eosio::contract("flon.system")]] epoch_reward {
+      name     producer;
+      asset    rewards;
+      uint32_t reward_shared_ratio = 0;
+
+      uint64_t primary_key() const { return producer.value; }
+   };
+   typedef eosio::multi_index<"epochreward"_n, epoch_reward> epoch_rewards_table;
+
+   struct [[eosio::table("rewardepoch"), eosio::contract("flon.system")]] reward_epoch_state {
+      uint64_t next_epoch_to_close = 0;
+   };
+   typedef eosio::singleton<"rewardepoch"_n, reward_epoch_state> reward_epoch_singleton;
+
+   struct [[eosio::table, eosio::contract("flon.system")]] pending_voter_state {
+      name              voter;
+      int64_t           votes = 0;
+      std::vector<name> producers;
+      uint64_t          activation_epoch = 0;
+
+      uint64_t primary_key() const { return voter.value; }
+   };
+   typedef eosio::multi_index<"pendingvote"_n, pending_voter_state> pending_voters_table;
+
+   struct [[eosio::table, eosio::contract("flon.system")]] pending_producer_delta {
+      name    producer;
+      int64_t votes_delta = 0;
+
+      uint64_t primary_key() const { return producer.value; }
+   };
+   typedef eosio::multi_index<"votedeltas"_n, pending_producer_delta> pending_vote_deltas_table;
    #endif//ENABLE_VOTING_PRODUCER
 
 
@@ -420,7 +455,7 @@ namespace eosiosystem {
          static constexpr eosio::name stake_account         = {"flon.stake"_n};
          static constexpr eosio::name vote_account          = {"flon.vote"_n};
          #ifdef ENABLE_VOTING_PRODUCER
-         static constexpr eosio::name reward_account        = {"flon.reward"_n};
+         static constexpr eosio::name voter_reward_account  = {"voter.reward"_n};
          #endif//ENABLE_VOTING_PRODUCER
          static constexpr eosio::name names_account         = {"flon.names"_n};
          static constexpr eosio::name fees_account          = {"flon.fees"_n};
@@ -798,6 +833,14 @@ namespace eosiosystem {
          void claimrewards( const name& owner );
 
          /**
+          * Finalize one completed six-hour reward epoch. The action is
+          * permissionless, sequential, and deterministic. It fixes voter
+          * reward ownership before any next-epoch vote changes are activated.
+          */
+         [[eosio::action]]
+         void closeepoch( uint64_t epoch_id );
+
+         /**
           * Undo reward action, undo the produced block rewards.
           * @param owner - producer account.
           */
@@ -902,6 +945,7 @@ namespace eosiosystem {
          using voteproducer_action = eosio::action_wrapper<"voteproducer"_n, &system_contract::voteproducer>;
          // using voteupdate_action = eosio::action_wrapper<"voteupdate"_n, &system_contract::voteupdate>;
          using claimrewards_action = eosio::action_wrapper<"claimrewards"_n, &system_contract::claimrewards>;
+         using closeepoch_action = eosio::action_wrapper<"closeepoch"_n, &system_contract::closeepoch>;
          using rmvproducer_action = eosio::action_wrapper<"rmvproducer"_n, &system_contract::rmvproducer>;
          #endif//ENABLE_VOTING_PRODUCER
          #ifdef ENABLE_NAME_BID
@@ -945,6 +989,12 @@ namespace eosiosystem {
          void update_vote_allocations( const std::vector<name>& old_producers, int64_t old_votes,
                                        const std::vector<name>& new_producers, int64_t new_votes );
          void update_producer_votes( const std::vector<name>& producers, int64_t votes_delta );
+         void materialize_pending_vote( const name& voter );
+         void queue_vote_change( const name& voter, int64_t votes,
+                                 const std::vector<name>& producers, uint64_t activation_epoch );
+         void update_pending_vote_deltas( const std::vector<name>& old_producers, int64_t old_votes,
+                                          const std::vector<name>& new_producers, int64_t new_votes );
+         uint64_t current_reward_epoch( const time_point& now ) const;
 
          // defined in finalizer_key.cpp
          bool is_savanna_consensus();

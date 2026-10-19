@@ -33,12 +33,12 @@ namespace flon {
    static constexpr int128_t  HIGH_PRECISION    = 1'000'000'000'000'000'000; // 10^18
 
    /**
-    * The `flon.reward` contract is used as a reward dispatcher contract for flon.system contract.
+    * The `voter.reward` contract distributes producer-shared rewards to voters.
     *
     */
-   class [[eosio::contract("flon.reward")]] flon_reward : public contract {
+   class [[eosio::contract("voter.reward")]] voter_reward : public contract {
       public:
-         flon_reward( name s, name code, eosio::datastream<const char*> ds ):
+         voter_reward( name s, name code, eosio::datastream<const char*> ds ):
                contract(s, code, ds),
                _global(get_self(), get_self().value),
                _voter_tbl(get_self(), get_self().value),
@@ -76,7 +76,7 @@ namespace flon {
           * @param votes      - votes value,
           */
          [[eosio::action]]
-         void addvote( const name& voter, const int64_t votes );
+         void addvote( const name& voter, const int64_t votes, uint64_t activation_epoch );
 
          /**
           * subvote.
@@ -85,7 +85,7 @@ namespace flon {
           * @param votes      - votes value,
           */
          [[eosio::action]]
-         void subvote( const name& voter, const int64_t votes );
+         void subvote( const name& voter, const int64_t votes, uint64_t activation_epoch );
 
 
          /**
@@ -96,7 +96,8 @@ namespace flon {
           * The voter's aggregate reward weight is divided equally among the selected producers.
           */
          [[eosio::action]]
-         void voteproducer( const name& voter, const std::vector<name>& producers );
+         void voteproducer( const name& voter, const std::vector<name>& producers,
+                            uint64_t activation_epoch );
 
          /**
           * claim rewards for voter
@@ -105,6 +106,14 @@ namespace flon {
           */
          [[eosio::action]]
          void claimrewards( const name& voter );
+
+         /**
+          * Seal a completed reward epoch after all producer reward transfers
+          * for that epoch have been received. Only the system contract may
+          * advance this monotonically increasing boundary.
+          */
+         [[eosio::action]]
+         void closeepoch( uint64_t epoch_id );
 
          /**
           * claim rewards for voter
@@ -127,18 +136,25 @@ namespace flon {
                            const asset &quantity,
                            const string &memo);
 
-         using init_action = eosio::action_wrapper<"init"_n, &flon_reward::init>;
-         using regproducer_action = eosio::action_wrapper<"regproducer"_n, &flon_reward::regproducer>;
-         using addvote_action = eosio::action_wrapper<"addvote"_n, &flon_reward::addvote>;
-         using subvote_action = eosio::action_wrapper<"subvote"_n, &flon_reward::subvote>;
-         using voteproducer_action = eosio::action_wrapper<"voteproducer"_n, &flon_reward::voteproducer>;
-         using claimrewards_action = eosio::action_wrapper<"claimrewards"_n, &flon_reward::claimrewards>;
-         using claimfor_action = eosio::action_wrapper<"claimfor"_n, &flon_reward::claimfor>;
+         using init_action = eosio::action_wrapper<"init"_n, &voter_reward::init>;
+         using regproducer_action = eosio::action_wrapper<"regproducer"_n, &voter_reward::regproducer>;
+         using addvote_action = eosio::action_wrapper<"addvote"_n, &voter_reward::addvote>;
+         using subvote_action = eosio::action_wrapper<"subvote"_n, &voter_reward::subvote>;
+         using voteproducer_action = eosio::action_wrapper<"voteproducer"_n, &voter_reward::voteproducer>;
+         using claimrewards_action = eosio::action_wrapper<"claimrewards"_n, &voter_reward::claimrewards>;
+         using closeepoch_action = eosio::action_wrapper<"closeepoch"_n, &voter_reward::closeepoch>;
+         using claimfor_action = eosio::action_wrapper<"claimfor"_n, &voter_reward::claimfor>;
    public:
          struct [[eosio::table("global")]] global_state {
             asset                total_rewards;
 
             typedef eosio::singleton< "global"_n, global_state >   table;
+         };
+
+         struct [[eosio::table("epochstate")]] epoch_state {
+            uint64_t next_epoch_to_close = 0;
+
+            typedef eosio::singleton<"epochstate"_n, epoch_state> table;
          };
 
          /**
@@ -183,6 +199,32 @@ namespace flon {
             typedef eosio::multi_index< "voters"_n, voter > table;
          };
 
+         struct [[eosio::table]] pending_vote {
+            name                       owner;
+            int64_t                    votes = 0;
+            std::vector<name>          producers;
+            uint64_t                   activation_epoch = 0;
+
+            uint64_t primary_key() const { return owner.value; }
+            typedef eosio::multi_index<"pendingvote"_n, pending_vote> table;
+         };
+
+         struct [[eosio::table]] epoch_index {
+            name     producer;
+            int128_t rewards_per_vote = 0;
+
+            uint64_t primary_key() const { return producer.value; }
+            typedef eosio::multi_index<"epochindex"_n, epoch_index> table;
+         };
+
+         struct [[eosio::table]] producer_delta {
+            name    producer;
+            int64_t votes_delta = 0;
+
+            uint64_t primary_key() const { return producer.value; }
+            typedef eosio::multi_index<"votedeltas"_n, producer_delta> table;
+         };
+
 
          static inline bool is_producer_registered(const name& contract_account, const name& producer) {
             producer::table producer_tbl(contract_account, contract_account.value);
@@ -195,12 +237,20 @@ namespace flon {
    private:
       global_state::table     _global;
       global_state            _gstate;
+      epoch_state::table      _epoch_state_tbl{get_self(), get_self().value};
       voter::table            _voter_tbl;
       producer::table         _producer_tbl;
+      pending_vote::table     _pending_vote_tbl{get_self(), get_self().value};
+      producer_delta::table   _producer_delta_tbl{get_self(), get_self().value};
 
       void claim_rewards( const name& voter );
       void allocate_producer_rewards(voted_producer_map& producers, int64_t weight_old, int64_t weight_delta, const name& new_payer, asset &allocated_rewards_out);
-      void change_vote(const name& voter, int64_t votes, bool is_adding);
+      void change_vote(const name& voter, int64_t votes, bool is_adding, uint64_t activation_epoch);
+      void materialize_pending(const name& voter);
+      void queue_vote_change(const name& voter, int64_t votes,
+                             const std::vector<name>& producers, uint64_t activation_epoch);
+      void update_pending_totals(const std::vector<name>& old_producers, int64_t old_votes,
+                                 const std::vector<name>& new_producers, int64_t new_votes);
       void check_init() const;
       const symbol& core_symbol() const;
       asset calc_voter_rewards(int64_t votes, const int128_t& rewards_per_vote) const;

@@ -3,8 +3,8 @@ set -euo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
-if [[ "${VLON_FLOW_IN_DOCKER:-0}" != "1" ]]; then
-  BUILD_CONTAINER=${BUILD_CONTAINER:-fuwal-testbuild}
+if [[ "${GLON_FLOW_IN_DOCKER:-0}" != "1" ]]; then
+  BUILD_CONTAINER=${BUILD_CONTAINER:-floncdt}
 
   if ! command -v docker >/dev/null 2>&1; then
     echo "docker is required when running this script from the host" >&2
@@ -21,14 +21,14 @@ if [[ "${VLON_FLOW_IN_DOCKER:-0}" != "1" ]]; then
   fi
 
   exec docker exec \
-    -e VLON_FLOW_IN_DOCKER=1 \
+    -e GLON_FLOW_IN_DOCKER=1 \
     -e CHAIN_URL="${CHAIN_URL:-}" \
     -e WALLET_NAME="${WALLET_NAME:-}" \
     -e WALLET_PASSWORD_FILE="${WALLET_PASSWORD_FILE:-}" \
     -e TEST_ACCOUNT="${TEST_ACCOUNT:-}" \
     -e TEST_PUBKEY="${TEST_PUBKEY:-}" \
     -e STAKE_QUANTITY="${STAKE_QUANTITY:-}" \
-    -e VLON_MAX_SUPPLY="${VLON_MAX_SUPPLY:-}" \
+    -e GLON_MAX_SUPPLY="${GLON_MAX_SUPPLY:-}" \
     -e TEST_FUND="${TEST_FUND:-}" \
     -e BUILD="${BUILD:-}" \
     -e DEPLOY_TOKEN="${DEPLOY_TOKEN:-}" \
@@ -38,7 +38,7 @@ if [[ "${VLON_FLOW_IN_DOCKER:-0}" != "1" ]]; then
     -e RUN_SUBVOTE="${RUN_SUBVOTE:-}" \
     -w "${SCRIPT_DIR}" \
     "${BUILD_CONTAINER}" \
-    /bin/bash ./test_vlon_vote_flow.sh "$@"
+    /bin/bash ./test_glon_vote_flow.sh "$@"
 fi
 
 : "${CHAIN_URL:=https://t.flonscan.io}"
@@ -46,7 +46,7 @@ fi
 : "${WALLET_PASSWORD_FILE:=/root/.password.txt}"
 : "${TEST_PUBKEY:=FU6Dm6xR3JxpeEhdswTV4qTawYXjBcV4gtWjRPELaS9wbQzNmSUC}"
 : "${STAKE_QUANTITY:=1.00000000 FLON}"
-: "${VLON_MAX_SUPPLY:=10000000000.00000000 VLON}"
+: "${GLON_MAX_SUPPLY:=10000000000.00000000 GLON}"
 : "${TEST_FUND:=5.00000000 FLON}"
 : "${BUILD:=0}"
 : "${DEPLOY_TOKEN:=0}"
@@ -61,7 +61,7 @@ if [[ -z "${TEST_ACCOUNT:-}" ]]; then
   for _ in 1 2 3 4; do
     suffix+="${chars[$((RANDOM % ${#chars[@]}))]}"
   done
-  TEST_ACCOUNT="vlonflow${suffix}"
+  TEST_ACCOUNT="glonflow${suffix}"
 fi
 
 MODE=${1:-flow}
@@ -125,19 +125,20 @@ push_action_checked() {
 usage() {
   cat <<'USAGE'
 Usage:
-  ./test_vlon_vote_flow.sh [flow|create-vlon|deploy|help]
+  ./test_glon_vote_flow.sh [flow|create-glon|deploy|help]
 
 Default mode is "flow".
 
 Environment overrides:
   CHAIN_URL              default: https://t.flonscan.io
-  BUILD_CONTAINER        default: fuwal-testbuild, used only from host
-  TEST_ACCOUNT           default: random vlonflowXXXX account
+  BUILD_CONTAINER        default: floncdt, used only from host
+  TEST_ACCOUNT           default: random glonflowXXXX account
   STAKE_QUANTITY         default: 1.00000000 FLON
-  VLON_MAX_SUPPLY        default: 10000000000.00000000 VLON
+  GLON_MAX_SUPPLY        default: 10000000000.00000000 GLON
   BUILD=1               rebuild flon.system/flon.token before running
   DEPLOY_SYSTEM=0        skip deploying local flon.system to flon
   DEPLOY_TOKEN=1         deploy local flon.token to flon.token
+                         required to enforce account-bound GLON transfers
   RUN_SUBVOTE=0          skip subvote/retire check
 USAGE
 }
@@ -269,27 +270,27 @@ grant_code_permission() {
   run cli set account permission "${account}" active --add-code -p "${account}@active"
 }
 
-create_vlon() {
-  log "Check VLON stats"
+create_glon() {
+  log "Check GLON stats"
   local stats
-  stats=$(cli get currency stats flon.token VLON || true)
+  stats=$(cli get currency stats flon.token GLON || true)
   printf '%s\n' "${stats}"
 
-  if printf '%s\n' "${stats}" | grep -q '"VLON"'; then
+  if printf '%s\n' "${stats}" | grep -q '"GLON"'; then
     if ! printf '%s\n' "${stats}" | grep -q '"issuer": "flon"'; then
-      echo "VLON already exists, but issuer is not flon" >&2
+      echo "GLON already exists, but issuer is not flon" >&2
       exit 1
     fi
-    if ! printf '%s\n' "${stats}" | grep -Eq '"supply": "[0-9]+\.[0-9]{8} VLON"'; then
-      echo "VLON already exists, but precision is not 8" >&2
+    if ! printf '%s\n' "${stats}" | grep -Eq '"supply": "[0-9]+\.[0-9]{8} GLON"'; then
+      echo "GLON already exists, but precision is not 8" >&2
       exit 1
     fi
-    log "VLON already exists on flon.token"
+    log "GLON already exists on flon.token"
     return
   fi
 
-  log "Create VLON on flon.token with issuer flon"
-  push_action_checked flon.token create "[\"flon\",\"${VLON_MAX_SUPPLY}\"]" -p flon.token@active
+  log "Create GLON on flon.token with issuer flon"
+  push_action_checked flon.token create "[\"flon\",\"${GLON_MAX_SUPPLY}\"]" -p flon.token@active
 }
 
 account_exists() {
@@ -308,7 +309,7 @@ ensure_test_account() {
 
 fund_test_account() {
   log "Fund ${TEST_ACCOUNT}"
-  run cli transfer flon "${TEST_ACCOUNT}" "${TEST_FUND}" "vlon vote flow test" -p flon@active
+  run cli transfer flon "${TEST_ACCOUNT}" "${TEST_FUND}" "glon vote flow test" -p flon@active
 }
 
 configure_election_if_needed() {
@@ -336,14 +337,14 @@ configure_election_if_needed() {
 show_balances() {
   log "Balances for ${TEST_ACCOUNT}"
   cli get currency balance flon.token "${TEST_ACCOUNT}" FLON || true
-  cli get currency balance flon.token "${TEST_ACCOUNT}" VLON || true
+  cli get currency balance flon.token "${TEST_ACCOUNT}" GLON || true
 }
 
 run_flow() {
   unlock_wallet
   deploy_contracts
   grant_code_permissions
-  create_vlon
+  create_glon
   ensure_test_account
   fund_test_account
   configure_election_if_needed
@@ -351,22 +352,22 @@ run_flow() {
   local stake_units
   local flon_before
   local flon_after_add
-  local vlon_before
-  local vlon_after_add
-  local vlon_after_sub
+  local glon_before
+  local glon_after_add
+  local glon_after_sub
   stake_units=$(asset_units "${STAKE_QUANTITY}")
 
   show_balances
   flon_before=$(balance_of "${TEST_ACCOUNT}" FLON)
-  vlon_before=$(balance_of "${TEST_ACCOUNT}" VLON)
+  glon_before=$(balance_of "${TEST_ACCOUNT}" GLON)
 
   log "Run flon::addvote"
   push_action_checked flon addvote "[\"${TEST_ACCOUNT}\",\"${STAKE_QUANTITY}\"]" -p "${TEST_ACCOUNT}@active"
 
   flon_after_add=$(balance_of "${TEST_ACCOUNT}" FLON)
-  vlon_after_add=$(balance_of "${TEST_ACCOUNT}" VLON)
+  glon_after_add=$(balance_of "${TEST_ACCOUNT}" GLON)
   assert_units_delta_lte "FLON should decrease by at least the staked amount after addvote" "${flon_before}" "${flon_after_add}" "-${stake_units}"
-  assert_units_delta "VLON should increase after addvote" "${vlon_before}" "${vlon_after_add}" "${stake_units}"
+  assert_units_delta "GLON should increase after addvote" "${glon_before}" "${glon_after_add}" "${stake_units}"
 
   log "After addvote"
   show_balances
@@ -382,8 +383,8 @@ run_flow() {
     exit 1
   fi
 
-  vlon_after_sub=$(balance_of "${TEST_ACCOUNT}" VLON)
-  assert_units_delta "VLON should return to previous balance after subvote" "${vlon_before}" "${vlon_after_sub}" "0"
+  glon_after_sub=$(balance_of "${TEST_ACCOUNT}" GLON)
+  assert_units_delta "GLON should return to previous balance after subvote" "${glon_before}" "${glon_after_sub}" "0"
 
   log "After subvote"
   show_balances
@@ -394,10 +395,10 @@ case "${MODE}" in
   flow)
     run_flow
     ;;
-  create-vlon)
+  create-glon)
     unlock_wallet
     deploy_contracts
-    create_vlon
+    create_glon
     ;;
   deploy)
     unlock_wallet

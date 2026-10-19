@@ -92,6 +92,19 @@ icon: @ICON_BASE_URL@/@ADMIN_ICON_URI@
 
 {{owner}} claims block and vote rewards from the system.
 
+<h1 class="contract">closeepoch</h1>
+
+---
+spec_version: "0.2.0"
+title: Close Reward Epoch
+summary: 'Finalize reward epoch {{epoch_id}}'
+icon: @ICON_BASE_URL@/@ADMIN_ICON_URI@
+---
+
+Finalize the completed six-hour reward epoch, settle producer and voter reward
+ownership from the immutable epoch vote snapshot, and activate vote changes
+queued for the following epoch. Epochs must be closed sequentially.
+
 <h1 class="contract">deleteauth</h1>
 
 ---

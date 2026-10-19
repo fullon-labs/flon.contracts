@@ -51,7 +51,7 @@ public:
 
       create_accounts({ "flon.token"_n, "flon.ram"_n, "flon.stake"_n,
                "flon.names"_n, "flon.fees"_n,
-               "flon.reward"_n, "flon.vote"_n });
+               "voter.reward"_n, "flon.vote"_n });
 
 
       produce_blocks( 100 );
@@ -65,13 +65,15 @@ public:
          token_abi_ser.set_abi(abi, abi_serializer::create_yield_function(abi_serializer_max_time));
       }
 
-      set_code( "flon.reward"_n, contracts::reward_wasm());
-      set_abi( "flon.reward"_n, contracts::reward_abi().data() );
+      set_code( "voter.reward"_n, contracts::voter_reward_wasm());
+      set_abi( "voter.reward"_n, contracts::voter_reward_abi().data() );
    }
 
    void create_core_token( symbol core_symbol = symbol{CORE_SYM} ) {
       FC_ASSERT( core_symbol.decimals() == 4, "create_core_token assumes core token has 4 digits of precision" );
       create_currency( "flon.token"_n, config::system_account_name, asset(100000000000000, core_symbol) );
+      create_currency( "flon.token"_n, config::system_account_name,
+                       asset(100000000000000, symbol(symbol_code("GLON"), core_symbol.precision())) );
       issue( asset(10000000000000, core_symbol) );
       BOOST_REQUIRE_EQUAL( asset(10000000000000, core_symbol), get_balance( "flon", core_symbol ) );
    }
@@ -897,6 +899,11 @@ public:
             ("election_activated_time", start_time)
             ("reward_started_time", start_time)
             ("initial_rewards_per_block", core_sym::from_string("0.8000")) );
+   }
+
+   action_result closeepoch( uint64_t epoch_id ) {
+      return push_action(config::system_account_name, "closeepoch"_n,
+                         mvo()("epoch_id", epoch_id));
    }
 
    uint32_t last_block_time() const {

@@ -21,7 +21,7 @@ endif()
 
 target_include_directories(flon.system PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include
                                                ${CMAKE_CURRENT_SOURCE_DIR}/../flon.token/include
-                                               ${CMAKE_CURRENT_SOURCE_DIR}/../flon.reward/include)
+                                               ${CMAKE_CURRENT_SOURCE_DIR}/../voter.reward/include)
 
 set_target_properties(flon.system PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
 
