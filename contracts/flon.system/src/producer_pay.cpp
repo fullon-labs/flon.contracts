@@ -32,6 +32,7 @@ namespace eosiosystem {
 
       // Add latest block information to blockinfo table.
       add_to_blockinfo_table(previous_block_id, timestamp);
+      accumulate_gas_node_stats(timestamp.slot);
 
       #ifdef ENABLE_VOTING_PRODUCER
       /** check producer reward started */
