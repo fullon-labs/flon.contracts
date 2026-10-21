@@ -39,6 +39,7 @@ namespace eosiosystem {
    using eosio::binary_extension;
    using eosio::block_timestamp;
    using eosio::check;
+   using eosio::checksum256;
    using eosio::const_mem_fun;
    using eosio::datastream;
    using eosio::indexed_by;
@@ -386,6 +387,72 @@ namespace eosiosystem {
 
 
    typedef eosio::singleton< "prodconf"_n, producing_config >   producing_config_singleton;
+
+   struct [[eosio::table("gasrewcfg"), eosio::contract("flon.system")]] gas_reward_config {
+      bool enabled = false;
+      uint32_t epoch_slots = 43'200;
+      uint16_t active_min_bp = 9'500;
+      uint16_t standby_min_proofs = 12;
+      uint16_t pool_bp = 1'000;
+      uint16_t active_share_bp = 8'000;
+      uint16_t active_base_bp = 4'000;
+      uint32_t last_accounted_slot = 0;
+      uint64_t last_metered_gas_value = 0;
+   };
+   using gas_reward_config_singleton = eosio::singleton<"gasrewcfg"_n, gas_reward_config>;
+
+   struct [[eosio::table, eosio::contract("flon.system")]] gas_node_role {
+      name owner;
+      uint8_t role = 0; // 1 active, 2 standby
+      uint64_t primary_key() const { return owner.value; }
+   };
+   using gas_node_roles = eosio::multi_index<"gasroles"_n, gas_node_role>;
+
+   struct [[eosio::table, eosio::contract("flon.system")]] gas_node_stat {
+      name owner;
+      uint32_t expected = 0;
+      uint32_t produced = 0;
+      uint32_t missed = 0;
+      uint32_t longest_missed = 0;
+      uint16_t standby_proofs = 0;
+      uint32_t last_proof_slot = 0;
+      checksum256 last_proof_block;
+      uint64_t score = 0;
+      bool eligible = false;
+      asset allocated;
+      uint64_t primary_key() const { return owner.value; }
+   };
+   using gas_node_stats = eosio::multi_index<"gasnodestats"_n, gas_node_stat>;
+
+   struct [[eosio::table, eosio::contract("flon.system")]] gas_epoch_meter {
+      uint64_t epoch_id;
+      uint64_t gas_value = 0;
+      uint64_t primary_key() const { return epoch_id; }
+   };
+   using gas_epoch_meters = eosio::multi_index<"gasepochmtr"_n, gas_epoch_meter>;
+
+   struct [[eosio::table, eosio::contract("flon.system")]] gas_settlement {
+      uint64_t epoch_id;
+      asset pool;
+      uint8_t phase = 1;
+      name cursor;
+      uint64_t active_score = 0;
+      uint32_t active_total = 0;
+      uint32_t active_eligible = 0;
+      uint32_t standby_eligible = 0;
+      uint32_t active_paid_count = 0;
+      uint32_t standby_paid_count = 0;
+      asset active_pool;
+      asset standby_pool;
+      asset active_allocated;
+      asset standby_allocated;
+      checksum256 allocation_hash;
+      bool funded = false;
+      bool incident_hold = false;
+      bool finalized = false;
+      uint64_t primary_key() const { return epoch_id; }
+   };
+   using gas_settlements = eosio::multi_index<"gassettles"_n, gas_settlement>;
 
    /**
     * The `flon.system` smart contract is provided by `block.one` as a sample system contract, and it defines the structures and actions needed for blockchain's core functionality.
@@ -891,6 +958,20 @@ namespace eosiosystem {
          [[eosio::action]]
          void setibintervl( uint64_t idle_block_interval_ms );
 
+         [[eosio::action]]
+         void setgasrwcfg(bool enabled, uint32_t epoch_slots, uint16_t active_min_bp,
+                          uint16_t standby_min_proofs, uint16_t pool_bp,
+                          uint16_t active_share_bp, uint16_t active_base_bp);
+
+         [[eosio::action]]
+         void standbyproof(name owner, uint64_t epoch_id, uint32_t head_block_num,
+                           checksum256 head_block_id);
+
+         [[eosio::action]] void beginsettle(uint64_t epoch_id);
+         [[eosio::action]] void settlenext(uint64_t epoch_id, uint16_t max_rows);
+         [[eosio::action]] void finalizeepoch(uint64_t epoch_id);
+         [[eosio::action]] void resolveincdt(uint64_t epoch_id, bool proceed);
+
          using init_action = eosio::action_wrapper<"init"_n, &system_contract::init>;
          using activate_action = eosio::action_wrapper<"activate"_n, &system_contract::activate>;
          using logsystemfee_action = eosio::action_wrapper<"logsystemfee"_n, &system_contract::logsystemfee>;
@@ -914,6 +995,10 @@ namespace eosiosystem {
          // using cfgreward_action = eosio::action_wrapper<"cfgreward"_n, &system_contract::cfgreward>;
          using setibintervl_action = eosio::action_wrapper<"setibintervl"_n, &system_contract::setibintervl>;
 
+         using beginsettle_action = eosio::action_wrapper<"beginsettle"_n, &system_contract::beginsettle>;
+         using settlenext_action = eosio::action_wrapper<"settlenext"_n, &system_contract::settlenext>;
+         using finalizeepoch_action = eosio::action_wrapper<"finalizeepoch"_n, &system_contract::finalizeepoch>;
+
       private:
          // Implementation details:
 
@@ -935,6 +1020,8 @@ namespace eosiosystem {
          //defined in flon.system.cpp
          static eosio_global_state get_default_parameters();
          void channel_to_system_fees( const name& from, const asset& amount );
+         void ensure_gas_epoch_roles(uint64_t epoch_id);
+         void accumulate_gas_node_stats(uint32_t current_slot);
 
 
          #ifdef ENABLE_VOTING_PRODUCER
