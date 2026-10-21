@@ -18,6 +18,8 @@ struct contracts {
    static std::vector<char>    boot_abi() { return read_abi("${CMAKE_BINARY_DIR}/contracts/flon.boot/flon.boot.abi"); }
    static std::vector<uint8_t> voter_reward_wasm() { return read_wasm("${CMAKE_BINARY_DIR}/contracts/voter.reward/voter.reward.wasm"); }
    static std::vector<char>    voter_reward_abi() { return read_abi("${CMAKE_BINARY_DIR}/contracts/voter.reward/voter.reward.abi"); }
+   static std::vector<uint8_t> gas_reward_wasm() { return read_wasm("${CMAKE_BINARY_DIR}/contracts/gas.reward/gas.reward.wasm"); }
+   static std::vector<char>    gas_reward_abi() { return read_abi("${CMAKE_BINARY_DIR}/contracts/gas.reward/gas.reward.abi"); }
 
    struct util {
       static std::vector<uint8_t> reject_all_wasm() { return read_wasm("${CMAKE_BINARY_DIR}/contracts/test_contracts/reject_all/reject_all.wasm"); }

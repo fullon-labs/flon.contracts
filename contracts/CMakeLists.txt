@@ -62,6 +62,7 @@ add_subdirectory(flon.system)
 add_subdirectory(flon.token)
 add_subdirectory(flon.wrap)
 add_subdirectory(voter.reward)
+add_subdirectory(gas.reward)
 add_subdirectory(pubkey.token)
 
 
