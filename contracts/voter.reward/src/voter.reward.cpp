@@ -189,7 +189,10 @@ void voter_reward::claim_rewards( const name& voter ) {
 
 void voter_reward::claimfor(const name& claimer, const name& voter) {
    check_init();
-   require_auth( claimer );
+   // Keep the legacy action for ABI compatibility, but require a true
+   // beneficiary-authorized pull claim instead of a relayer-triggered payout.
+   CHECK(claimer == voter, "claimer must be the reward beneficiary")
+   require_auth(voter);
    claim_rewards(voter);
 }
 

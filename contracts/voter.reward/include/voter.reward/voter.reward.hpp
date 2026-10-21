@@ -100,7 +100,7 @@ namespace flon {
                             uint64_t activation_epoch );
 
          /**
-          * claim rewards for voter
+          * Legacy self-claim entrypoint. Third-party claims are not allowed.
           *
           * @param voter - the account of voter
           */
@@ -118,10 +118,10 @@ namespace flon {
          /**
           * claim rewards for voter
           *
-          * @param claimer - the account of claimer
+          * @param claimer - must equal voter
           * @param voter - the account of voter
           */
-         ACTION claimfor(const name& clamer, const name& voter );
+         ACTION claimfor(const name& claimer, const name& voter );
         /**
          * Notify by transfer() of xtoken contract
          *
