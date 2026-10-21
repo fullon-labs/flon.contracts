@@ -15,6 +15,13 @@ constexpr uint16_t max_settle_rows = 10;
 bool contains(const std::vector<name>& values, name value) {
    return std::find(values.begin(), values.end(), value) != values.end();
 }
+
+int64_t mul_div(int64_t value, uint64_t multiplier, uint64_t divisor,
+                const char* overflow_message) {
+   const __int128 result = static_cast<__int128>(value) * multiplier / divisor;
+   check(result >= 0 && result <= std::numeric_limits<int64_t>::max(), overflow_message);
+   return static_cast<int64_t>(result);
+}
 }
 
 void system_contract::setgasrwcfg(bool enabled, uint32_t epoch_slots,
@@ -27,6 +34,8 @@ void system_contract::setgasrwcfg(bool enabled, uint32_t epoch_slots,
          active_share_bp <= basis_points && active_base_bp <= basis_points,
          "basis point value exceeds 10000");
    check(standby_min_proofs > 0, "standby proof threshold must be positive");
+   check(standby_min_proofs <= epoch_slots,
+         "standby proof threshold cannot exceed the epoch slot count");
 
    gas_reward_config_singleton config(get_self(), get_self().value);
    if (config.exists()) {
@@ -170,10 +179,12 @@ void system_contract::beginsettle(uint64_t epoch_id) {
    check(settlements.find(epoch_id) == settlements.end(), "settlement already started");
    const auto sym = core_symbol();
    const asset zero(0, sym);
-   const __int128 pool_amount = (__int128)meter->gas_value * config.pool_bp / basis_points;
-   check(pool_amount <= std::numeric_limits<int64_t>::max(), "epoch reward pool overflow");
+   check(meter->gas_value <= static_cast<uint64_t>(std::numeric_limits<int64_t>::max()),
+         "epoch gas value exceeds asset range");
+   const int64_t pool_amount = mul_div(static_cast<int64_t>(meter->gas_value), config.pool_bp,
+                                       basis_points, "epoch reward pool overflow");
    settlements.emplace(get_self(), [&](auto& row) {
-      row.epoch_id = epoch_id; row.pool = asset(static_cast<int64_t>(pool_amount), sym);
+      row.epoch_id = epoch_id; row.pool = asset(pool_amount, sym);
       row.active_pool = zero; row.standby_pool = zero;
       row.active_allocated = zero; row.standby_allocated = zero;
    });
@@ -217,7 +228,8 @@ void system_contract::settlenext(uint64_t epoch_id, uint16_t max_rows) {
          if (done) {
             row.incident_hold = active_total > 0 && uint64_t(active_count) * 3 < uint64_t(active_total) * 2;
             row.phase = row.incident_hold ? 4 : 2;
-            const int64_t active_target = row.pool.amount * config.active_share_bp / basis_points;
+            const int64_t active_target = mul_div(row.pool.amount, config.active_share_bp,
+                                                  basis_points, "active reward pool overflow");
             row.active_pool.amount = active_count ? active_target : 0;
             row.standby_pool.amount = standby_count ? row.pool.amount - active_target : 0;
             row.pool.amount = row.active_pool.amount + row.standby_pool.amount;
@@ -256,17 +268,28 @@ void system_contract::settlenext(uint64_t epoch_id, uint16_t max_rows) {
          if (active_paid == settlement->active_eligible) {
             amount = settlement->active_pool.amount - active_allocated;
          } else {
-            const int64_t base_pool = settlement->active_pool.amount * config.active_base_bp / basis_points;
+            const int64_t base_pool = mul_div(settlement->active_pool.amount,
+                                              config.active_base_bp, basis_points,
+                                              "active base pool overflow");
             const int64_t performance_pool = settlement->active_pool.amount - base_pool;
-            amount = base_pool / settlement->active_eligible +
-                     (__int128)performance_pool * it->score / settlement->active_score;
+            const int64_t performance_amount = mul_div(performance_pool, it->score,
+                                                       settlement->active_score,
+                                                       "active performance reward overflow");
+            check(base_pool / settlement->active_eligible <=
+                     std::numeric_limits<int64_t>::max() - performance_amount,
+                  "active node reward overflow");
+            amount = base_pool / settlement->active_eligible + performance_amount;
          }
+         check(amount <= settlement->active_pool.amount - active_allocated,
+               "active allocation exceeds pool");
          active_allocated += amount;
       } else {
          ++standby_paid;
          amount = standby_paid == settlement->standby_eligible
             ? settlement->standby_pool.amount - standby_allocated
             : settlement->standby_pool.amount / settlement->standby_eligible;
+         check(amount <= settlement->standby_pool.amount - standby_allocated,
+               "standby allocation exceeds pool");
          standby_allocated += amount;
       }
       if (amount > 0) {

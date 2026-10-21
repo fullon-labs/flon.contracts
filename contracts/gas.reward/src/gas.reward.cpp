@@ -54,7 +54,8 @@ void gas_reward::ontransfer(name from, name to, asset quantity, std::string memo
    reward_epochs epochs(get_self(), get_self().value);
    auto epoch = epochs.require_find(epoch_id, "epoch not opened");
    eosio::check(!epoch->finalized, "epoch already finalized");
-   eosio::check(epoch->funded.amount + quantity.amount <= epoch->expected.amount, "epoch overfunded");
+   eosio::check(quantity.amount <= epoch->expected.amount - epoch->funded.amount,
+                "epoch overfunded");
    epochs.modify(epoch, eosio::same_payer, [&](auto& row) { row.funded += quantity; });
    state.total_funded += quantity;
    global_singleton(get_self(), get_self().value).set(state, get_self());
@@ -93,14 +94,19 @@ void gas_reward::creditbatch(uint64_t epoch_id, const std::vector<name>& owners,
       }
       const auto packed = eosio::pack(std::make_tuple(hash, owners[i], quantities[i]));
       hash = eosio::sha256(packed.data(), packed.size());
+      eosio::check(quantities[i].amount <= std::numeric_limits<int64_t>::max() - batch_total,
+                   "credit batch total overflow");
       batch_total += quantities[i].amount;
       previous = owners[i];
    }
-   eosio::check(epoch->allocated.amount + batch_total <= epoch->funded.amount, "credits exceed funding");
+   eosio::check(batch_total <= epoch->funded.amount - epoch->allocated.amount,
+                "credits exceed funding");
    epochs.modify(epoch, eosio::same_payer, [&](auto& row) {
       row.allocated.amount += batch_total; row.credited += owners.size();
       row.last_credited = previous; row.allocation_hash = hash;
    });
+   eosio::check(batch_total <= std::numeric_limits<int64_t>::max() - state.total_allocated.amount,
+                "global allocation total overflow");
    state.total_allocated.amount += batch_total;
    global_singleton(get_self(), get_self().value).set(state, get_self());
 }
