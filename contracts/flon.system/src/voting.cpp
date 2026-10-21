@@ -129,6 +129,38 @@ namespace eosiosystem {
       });
    }
 
+   void system_contract::resumeprod( const name& producer ) {
+      require_auth(producer);
+      check(_gstate.reward_started_time != time_point(), "producer performance accounting has not started");
+
+      const auto& prod = _producers.get(producer.value, "producer not found");
+      check(prod.active(), "producer is not registered as active");
+
+      producer_performance_state_table states(get_self(), get_self().value);
+      auto itr = states.find(producer.value);
+      check(itr != states.end() &&
+            itr->status == static_cast<uint8_t>(bp_performance_status::suspended),
+            "producer is not suspended");
+
+      const uint64_t epoch_id = current_reward_epoch(current_time_point());
+      check(epoch_id >= itr->suspended_until_epoch, "producer cooldown has not expired");
+
+      states.modify(itr, same_payer, [&](auto& row) {
+         row.status = static_cast<uint8_t>(bp_performance_status::probation);
+         row.probation_started_epoch = epoch_id;
+         row.probation_missed_streak = 0;
+      });
+   }
+
+   void system_contract::setbpquorum( uint16_t active_bp_quorum ) {
+      require_auth(get_self());
+      check(active_bp_quorum >= 3 && active_bp_quorum <= 21,
+            "active BP quorum must be between 3 and 21");
+
+      election_config_singleton config(get_self(), get_self().value);
+      config.set(election_config{active_bp_quorum}, get_self());
+   }
+
    void system_contract::update_elected_producers( const block_timestamp& block_time ) {
       _gstate.last_producer_schedule_update = block_time;
 
@@ -137,12 +169,22 @@ namespace eosiosystem {
       using value_type = std::pair<eosio::producer_authority, uint16_t>;
       std::vector< value_type > top_producers;
       std::vector< finalizer_auth_info > proposed_finalizers;
-      top_producers.reserve(21);
-      proposed_finalizers.reserve(21);
+      election_config_singleton election_config_tbl(get_self(), get_self().value);
+      const uint16_t active_bp_quorum = election_config_tbl.exists()
+         ? election_config_tbl.get().active_bp_quorum : 21;
+      top_producers.reserve(active_bp_quorum);
+      proposed_finalizers.reserve(active_bp_quorum);
 
       bool is_savanna = is_savanna_consensus();
+      const bool performance_started = _gstate.reward_started_time != time_point() &&
+                                       current_time_point() >= _gstate.reward_started_time;
+      const uint64_t performance_epoch = performance_started
+                                           ? current_reward_epoch(current_time_point()) : 0;
 
-      for( auto it = idx.cbegin(); it != idx.cend() && top_producers.size() < 21 && 0 < it->total_votes && it->active(); ++it ) {
+      for( auto it = idx.cbegin(); it != idx.cend() &&
+           top_producers.size() < active_bp_quorum && 0 < it->total_votes; ++it ) {
+         if (!it->active()) continue;
+         if (performance_started && !is_performance_eligible(it->owner, performance_epoch)) continue;
          if( is_savanna ) {
             auto finalizer = _finalizers.find( it->owner.value );
             if( finalizer == _finalizers.end() ) {
@@ -168,7 +210,10 @@ namespace eosiosystem {
          );
       }
 
-      if( top_producers.size() == 0 || top_producers.size() < _gstate.last_producer_schedule_size ) {
+      // A suspension must be able to remove a producer even when the eligible
+      // replacement set is smaller than the previous schedule. Keeping the old
+      // schedule would leave the suspended producer assigned to new slots.
+      if( top_producers.empty() ) {
          return;
       }
 

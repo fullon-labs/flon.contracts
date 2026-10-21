@@ -378,6 +378,75 @@ namespace eosiosystem {
 
    static constexpr uint32_t reward_epoch_seconds = 6 * 60 * 60;
    static constexpr uint32_t reward_epoch_slots = reward_epoch_seconds * 2;
+   static constexpr uint32_t producer_stats_query_limit = 100'000;
+   static constexpr uint32_t producer_stats_onblock_limit = 100'000;
+   static constexpr uint32_t min_expected_blocks = 12;
+   static constexpr uint32_t probation_missed_streak_limit = 12;
+   static constexpr uint32_t max_suspension_epochs = 8;
+
+   enum class bp_performance_status : uint8_t {
+      unassessed          = 0,
+      qualified          = 1,
+      degraded           = 2,
+      warning            = 3,
+      suspended          = 4,
+      insufficient_sample = 5,
+      network_incident   = 6,
+      probation          = 7
+   };
+
+   struct [[eosio::table, eosio::contract("flon.system")]] bp_performance {
+      name     producer;
+      uint64_t epoch_id = 0;
+      uint64_t expected_blocks = 0;
+      uint64_t produced_blocks = 0;
+      uint64_t missed_blocks = 0;
+      uint64_t longest_missed_streak = 0;
+      uint64_t trailing_missed_streak = 0;
+      uint8_t  status = static_cast<uint8_t>(bp_performance_status::unassessed);
+      uint32_t warning_count = 0;
+
+      uint64_t primary_key() const { return producer.value; }
+   };
+   typedef eosio::multi_index<"bpstats"_n, bp_performance> bp_performance_table;
+
+   struct [[eosio::table, eosio::contract("flon.system")]] epoch_performance {
+      uint64_t          epoch_id = 0;
+      uint32_t          start_slot = 0;
+      uint32_t          end_slot = 0;
+      eosio::checksum256 schedule_hash;
+      bool              complete_sample = false;
+      uint32_t          active_bp_count = 0;
+      uint32_t          failed_bp_count = 0;
+      bool              network_incident = false;
+      bool              closed = false;
+
+      uint64_t primary_key() const { return epoch_id; }
+   };
+   typedef eosio::multi_index<"epochstats"_n, epoch_performance> epoch_performance_table;
+
+   struct [[eosio::table, eosio::contract("flon.system")]] producer_performance_state {
+      name     producer;
+      uint8_t  status = static_cast<uint8_t>(bp_performance_status::unassessed);
+      uint32_t warning_count = 0;
+      uint64_t suspended_until_epoch = 0;
+      uint32_t suspension_count = 0;
+      uint64_t probation_started_epoch = 0;
+      binary_extension<uint32_t> probation_missed_streak;
+
+      uint64_t primary_key() const { return producer.value; }
+   };
+   typedef eosio::multi_index<"bpstatus"_n, producer_performance_state> producer_performance_state_table;
+
+   struct [[eosio::table("perfstate"), eosio::contract("flon.system")]] performance_accounting_state {
+      uint32_t last_accounted_slot = 0;
+   };
+   typedef eosio::singleton<"perfstate"_n, performance_accounting_state> performance_accounting_singleton;
+
+   struct [[eosio::table("electconfig"), eosio::contract("flon.system")]] election_config {
+      uint16_t active_bp_quorum = 21;
+   };
+   typedef eosio::singleton<"electconfig"_n, election_config> election_config_singleton;
 
    struct [[eosio::table, eosio::contract("flon.system")]] epoch_reward {
       name     producer;
@@ -654,6 +723,20 @@ namespace eosiosystem {
           */
          [[eosio::action]]
          void unregprod( const name& producer );
+
+         /**
+          * Request re-entry after a performance suspension. The cooldown must
+          * have expired. Re-entry starts in probation and remains subject to
+          * the deterministic consecutive-missed-slot circuit breaker.
+          *
+          * @param producer - producer requesting recovery.
+          */
+         [[eosio::action]]
+         void resumeprod( const name& producer );
+
+         /** Configure the target Active BP schedule size during bootstrap. */
+         [[eosio::action]]
+         void setbpquorum( uint16_t active_bp_quorum );
 
          /**
           * Action to permanently transition to Savanna consensus.
@@ -942,6 +1025,8 @@ namespace eosiosystem {
          using regproducer_action = eosio::action_wrapper<"regproducer"_n, &system_contract::regproducer>;
          using regproducer2_action = eosio::action_wrapper<"regproducer2"_n, &system_contract::regproducer2>;
          using unregprod_action = eosio::action_wrapper<"unregprod"_n, &system_contract::unregprod>;
+         using resumeprod_action = eosio::action_wrapper<"resumeprod"_n, &system_contract::resumeprod>;
+         using setbpquorum_action = eosio::action_wrapper<"setbpquorum"_n, &system_contract::setbpquorum>;
          using voteproducer_action = eosio::action_wrapper<"voteproducer"_n, &system_contract::voteproducer>;
          // using voteupdate_action = eosio::action_wrapper<"voteupdate"_n, &system_contract::voteupdate>;
          using claimrewards_action = eosio::action_wrapper<"claimrewards"_n, &system_contract::claimrewards>;
@@ -995,6 +1080,13 @@ namespace eosiosystem {
          void update_pending_vote_deltas( const std::vector<name>& old_producers, int64_t old_votes,
                                           const std::vector<name>& new_producers, int64_t new_votes );
          uint64_t current_reward_epoch( const time_point& now ) const;
+         uint64_t reward_epoch_for_slot( uint32_t slot ) const;
+         void record_producer_slot_stats( const block_timestamp& timestamp );
+         void accumulate_producer_slot_stats( uint64_t epoch_id, uint32_t from_slot, uint32_t to_slot );
+         void enforce_probation_fuse( uint64_t epoch_id );
+         uint64_t suspension_cooldown_epochs( uint32_t suspension_count ) const;
+         bool is_performance_eligible( const name& producer, uint64_t epoch_id ) const;
+         uint32_t reward_factor_basis_points( const bp_performance* stats, bool network_incident ) const;
 
          // defined in finalizer_key.cpp
          bool is_savanna_consensus();

@@ -289,6 +289,28 @@ icon: @ICON_BASE_URL@/@VOTING_ICON_URI@
 
 {{producer}} unregisters as a block producer candidate. {{producer}} account will retain its votes and those votes can change based on voter stake changes or votes removed from {{producer}}. However new voters will not be able to vote for {{producer}} while it remains unregistered.
 
+<h1 class="contract">resumeprod</h1>
+
+---
+spec_version: "0.2.0"
+title: Resume Block Production on Probation
+summary: '{{nowrap producer}} requests production recovery after its suspension cooldown'
+icon: @ICON_BASE_URL@/@VOTING_ICON_URI@
+---
+
+{{producer}} confirms that its block producer node is online and requests re-entry after the on-chain suspension cooldown. A successful transaction places the producer in probation; it does not guarantee immediate schedule admission or qualified status. Missing 12 consecutive assigned slots during probation causes another automatic suspension, with the cooldown escalating up to 48 hours.
+
+<h1 class="contract">setbpquorum</h1>
+
+---
+spec_version: "0.2.0"
+title: Configure Active BP quorum
+summary: 'Set the target number of Active Block Producers during network bootstrap.'
+icon: https://fullon.network/favicon.ico
+---
+
+The `flon` system account sets the target Active BP schedule size to {{active_bp_quorum}}. The value must be between 3 and 21. The change affects the next producer schedule proposal and does not bypass performance eligibility checks.
+
 <h1 class="contract">updateauth</h1>
 
 ---
