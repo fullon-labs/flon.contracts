@@ -21,7 +21,7 @@ class [[eosio::contract("gas.reward")]] gas_reward : public eosio::contract {
    [[eosio::action]] void creditbatch(uint64_t epoch_id,
       const std::vector<name>& owners, const std::vector<asset>& quantities);
    [[eosio::action]] void finalize(uint64_t epoch_id, checksum256 allocation_hash);
-   [[eosio::action]] void claimgas(name owner);
+   [[eosio::action]] void claimrewards(name owner);
 
    [[eosio::on_notify("flon.token::transfer")]]
    void ontransfer(name from, name to, asset quantity, std::string memo);

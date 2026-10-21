@@ -122,7 +122,7 @@ void gas_reward::finalize(uint64_t epoch_id, checksum256 allocation_hash) {
    epochs.modify(epoch, eosio::same_payer, [&](auto& row) { row.finalized = true; });
 }
 
-void gas_reward::claimgas(name owner) {
+void gas_reward::claimrewards(name owner) {
    require_auth(owner);
    auto state = get_global();
    node_rewards rewards(get_self(), get_self().value);

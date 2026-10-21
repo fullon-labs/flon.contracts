@@ -204,7 +204,7 @@ BOOST_FIXTURE_TEST_CASE(claim_transfer_failure_rolls_back_ledger, gas_reward_tes
       mvo()("epoch_id", epoch)("owners", std::vector<name>{"alice"_n})
            ("quantities", std::vector<asset>{asset(1'000, core_symbol)})));
 
-   // Simulate an insolvent reward account. claimgas updates its ledger before
+   // Simulate an insolvent reward account. claimrewards updates its ledger before
    // issuing the inline transfer, so the failed transfer must roll everything back.
    BOOST_REQUIRE_EQUAL(success(), transfer("gas.reward"_n, "sink"_n,
                                            asset(1'000, core_symbol), "drain for rollback test"));
@@ -212,7 +212,7 @@ BOOST_FIXTURE_TEST_CASE(claim_transfer_failure_rolls_back_ledger, gas_reward_tes
    const auto alice_before = balance("alice"_n);
 
    BOOST_REQUIRE_EQUAL(wasm_assert_msg("overdrawn balance"),
-      reward("alice"_n, "claimgas"_n, mvo()("owner", "alice"_n)));
+      reward("alice"_n, "claimrewards"_n, mvo()("owner", "alice"_n)));
    const auto node = get_node("alice"_n);
    BOOST_REQUIRE_EQUAL(node["claimed"].as<asset>(), asset(0, core_symbol));
    BOOST_REQUIRE_EQUAL(node["unclaimed"].as<asset>(), asset(1'000, core_symbol));
