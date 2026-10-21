@@ -40,6 +40,8 @@ void system_contract::setgasrwcfg(bool enabled, uint32_t epoch_slots,
    gas_reward_config_singleton config(get_self(), get_self().value);
    if (config.exists()) {
       const auto old = config.get();
+      check(epoch_slots == old.epoch_slots,
+            "epoch slot count is immutable after gas rewards are configured");
       if (old.enabled) {
          check(!enabled, "disable gas rewards before changing configuration");
          check(epoch_slots == old.epoch_slots && active_min_bp == old.active_min_bp &&
@@ -49,20 +51,37 @@ void system_contract::setgasrwcfg(bool enabled, uint32_t epoch_slots,
       }
    }
 
+   const uint64_t first_reward_epoch = enabled
+      ? uint64_t(eosio::current_block_time().slot) / epoch_slots + 1
+      : 0;
    gas_reward_config next{enabled, epoch_slots, active_min_bp, standby_min_proofs,
-                          pool_bp, active_share_bp, active_base_bp, 0, 0};
+                          pool_bp, active_share_bp, active_base_bp,
+                          first_reward_epoch, 0, 0};
    config.set(next, get_self());
 }
 
-void system_contract::ensure_gas_epoch_roles(uint64_t epoch_id) {
-   gas_node_roles roles(get_self(), epoch_id);
-   if (roles.begin() != roles.end()) return;
-
+void system_contract::ensure_gas_epoch_roles(uint64_t epoch_id,
+                                             const gas_reward_config& config) {
+   gas_epoch_configs epoch_configs(get_self(), get_self().value);
+   if (epoch_configs.find(epoch_id) == epoch_configs.end()) {
+      epoch_configs.emplace(get_self(), [&](auto& row) {
+         row.epoch_id = epoch_id;
+         row.epoch_slots = config.epoch_slots;
+         row.active_min_bp = config.active_min_bp;
+         row.standby_min_proofs = config.standby_min_proofs;
+         row.pool_bp = config.pool_bp;
+         row.active_share_bp = config.active_share_bp;
+         row.active_base_bp = config.active_base_bp;
+      });
+   }
    gas_node_stats stats(get_self(), epoch_id);
+   if (stats.begin() != stats.end()) return;
+
    const auto zero = asset(0, core_symbol());
    const auto add_role = [&](name owner, uint8_t role) {
-      roles.emplace(get_self(), [&](auto& row) { row.owner = owner; row.role = role; });
-      stats.emplace(get_self(), [&](auto& row) { row.owner = owner; row.allocated = zero; });
+      stats.emplace(get_self(), [&](auto& row) {
+         row.owner = owner; row.role = role; row.allocated = zero;
+      });
    };
 
    const auto active = eosio::get_active_producers();
@@ -86,7 +105,6 @@ void system_contract::accumulate_gas_node_stats(uint32_t current_slot) {
    if (!config.enabled) return;
 
    const auto totals = eosio::get_gas_fee_totals();
-   ensure_gas_epoch_roles(current_slot / config.epoch_slots);
    if (config.last_accounted_slot == 0) {
       config.last_accounted_slot = current_slot;
       config.last_metered_gas_value = totals.total_gas_value_flon;
@@ -101,30 +119,33 @@ void system_contract::accumulate_gas_node_stats(uint32_t current_slot) {
    // accounted block, not to the current epoch's pending block.
    const uint64_t gas_epoch = config.last_accounted_slot / config.epoch_slots;
    const uint64_t gas_delta = totals.total_gas_value_flon - config.last_metered_gas_value;
-   gas_epoch_meters meters(get_self(), get_self().value);
-   auto meter = meters.find(gas_epoch);
-   if (meter == meters.end()) {
-      meters.emplace(get_self(), [&](auto& row) { row.epoch_id = gas_epoch; row.gas_value = gas_delta; });
-   } else {
-      meters.modify(meter, eosio::same_payer, [&](auto& row) { row.gas_value += gas_delta; });
+   if (gas_epoch >= config.first_reward_epoch) {
+      gas_epoch_meters meters(get_self(), get_self().value);
+      auto meter = meters.find(gas_epoch);
+      if (meter == meters.end()) {
+         meters.emplace(get_self(), [&](auto& row) { row.epoch_id = gas_epoch; row.gas_value = gas_delta; });
+      } else {
+         meters.modify(meter, eosio::same_payer, [&](auto& row) { row.gas_value += gas_delta; });
+      }
    }
 
    uint32_t from = config.last_accounted_slot + 1;
    while (from <= current_slot) {
       const uint64_t epoch_id = from / config.epoch_slots;
-      ensure_gas_epoch_roles(epoch_id);
       const uint64_t epoch_last = (epoch_id + 1) * uint64_t(config.epoch_slots) - 1;
       const uint32_t to = static_cast<uint32_t>(std::min<uint64_t>(current_slot, epoch_last));
-      gas_node_roles roles(get_self(), epoch_id);
-      gas_node_stats stats(get_self(), epoch_id);
-      for (const auto& item : eosio::get_producer_slot_stats(from, to)) {
-         if (roles.find(item.producer.value) == roles.end()) continue;
-         auto stat = stats.require_find(item.producer.value, "missing epoch node statistics");
-         stats.modify(stat, eosio::same_payer, [&](auto& row) {
-            row.expected += item.expected; row.produced += item.produced;
-            row.missed += item.missed;
-            row.longest_missed = std::max(row.longest_missed, item.longest_missed_streak);
-         });
+      if (epoch_id >= config.first_reward_epoch) {
+         ensure_gas_epoch_roles(epoch_id, config);
+         gas_node_stats stats(get_self(), epoch_id);
+         for (const auto& item : eosio::get_producer_slot_stats(from, to)) {
+            auto stat = stats.find(item.producer.value);
+            if (stat == stats.end()) continue;
+            stats.modify(stat, eosio::same_payer, [&](auto& row) {
+               row.expected += item.expected; row.produced += item.produced;
+               row.missed += item.missed;
+               row.longest_missed = std::max(row.longest_missed, item.longest_missed_streak);
+            });
+         }
       }
       if (to == std::numeric_limits<uint32_t>::max()) break;
       from = to + 1;
@@ -141,22 +162,24 @@ void system_contract::standbyproof(name owner, uint64_t epoch_id,
    gas_reward_config_singleton config_table(get_self(), get_self().value);
    check(config_table.exists() && config_table.get().enabled, "gas rewards are disabled");
    const auto config = config_table.get();
-   check(epoch_id == eosio::current_block_time().slot / config.epoch_slots,
+   check(epoch_id >= config.first_reward_epoch &&
+         epoch_id == eosio::current_block_time().slot / config.epoch_slots,
          "proof must target the current epoch");
-   gas_node_roles roles(get_self(), epoch_id);
-   auto role = roles.require_find(owner.value, "node is not in this epoch");
-   check(role->role == standby_role, "only snapshotted standby nodes may prove");
+   gas_epoch_configs epoch_configs(get_self(), get_self().value);
+   const auto epoch_config = epoch_configs.get(epoch_id, "missing epoch reward configuration");
+   gas_node_stats stats(get_self(), epoch_id);
+   auto stat = stats.require_find(owner.value, "node is not in this epoch");
+   check(stat->role == standby_role, "only snapshotted standby nodes may prove");
    const auto current = eosio::current_block_number();
    check(head_block_num <= current && current - head_block_num <= 240, "proof block is not recent");
    checksum256 canonical;
    check(eosio::get_recent_block_id(head_block_num, canonical) && canonical == head_block_id,
          "proof block id is not canonical");
 
-   gas_node_stats stats(get_self(), epoch_id);
-   auto stat = stats.find(owner.value);
-   const uint32_t min_spacing = std::max<uint32_t>(1, config.epoch_slots / config.standby_min_proofs);
-   check(stat != stats.end(), "missing standby statistics");
-   check(stat->standby_proofs < config.standby_min_proofs, "standby proof threshold already reached");
+   const uint32_t min_spacing = std::max<uint32_t>(
+      1, epoch_config.epoch_slots / epoch_config.standby_min_proofs);
+   check(stat->standby_proofs < epoch_config.standby_min_proofs,
+         "standby proof threshold already reached");
    check(stat->last_proof_block != head_block_id, "duplicate proof block");
    if (stat->standby_proofs > 0) {
       check(eosio::current_block_time().slot >= stat->last_proof_slot + min_spacing,
@@ -173,6 +196,8 @@ void system_contract::beginsettle(uint64_t epoch_id) {
    check(config_table.exists() && config_table.get().enabled, "gas rewards are disabled");
    const auto config = config_table.get();
    check(epoch_id < eosio::current_block_time().slot / config.epoch_slots, "epoch has not ended");
+   gas_epoch_configs epoch_configs(get_self(), get_self().value);
+   const auto epoch_config = epoch_configs.get(epoch_id, "missing epoch reward configuration");
    gas_epoch_meters meters(get_self(), get_self().value);
    auto meter = meters.require_find(epoch_id, "epoch gas has not been metered");
    gas_settlements settlements(get_self(), get_self().value);
@@ -181,7 +206,7 @@ void system_contract::beginsettle(uint64_t epoch_id) {
    const asset zero(0, sym);
    check(meter->gas_value <= static_cast<uint64_t>(std::numeric_limits<int64_t>::max()),
          "epoch gas value exceeds asset range");
-   const int64_t pool_amount = mul_div(static_cast<int64_t>(meter->gas_value), config.pool_bp,
+   const int64_t pool_amount = mul_div(static_cast<int64_t>(meter->gas_value), epoch_config.pool_bp,
                                        basis_points, "epoch reward pool overflow");
    settlements.emplace(get_self(), [&](auto& row) {
       row.epoch_id = epoch_id; row.pool = asset(pool_amount, sym);
@@ -192,12 +217,12 @@ void system_contract::beginsettle(uint64_t epoch_id) {
 
 void system_contract::settlenext(uint64_t epoch_id, uint16_t max_rows) {
    check(max_rows > 0 && max_rows <= max_settle_rows, "max_rows must be between 1 and 10");
-   const auto config = gas_reward_config_singleton(get_self(), get_self().value).get();
+   gas_epoch_configs epoch_configs(get_self(), get_self().value);
+   const auto config = epoch_configs.get(epoch_id, "missing epoch reward configuration");
    gas_settlements settlements(get_self(), get_self().value);
    auto settlement = settlements.require_find(epoch_id, "settlement not started");
    check(!settlement->finalized, "settlement already finalized");
    gas_node_stats stats(get_self(), epoch_id);
-   gas_node_roles roles(get_self(), epoch_id);
 
    auto it = settlement->cursor.value ? stats.upper_bound(settlement->cursor.value) : stats.begin();
    uint16_t processed = 0;
@@ -208,11 +233,10 @@ void system_contract::settlenext(uint64_t epoch_id, uint16_t max_rows) {
       uint32_t standby_count = settlement->standby_eligible;
       name cursor = settlement->cursor;
       while (it != stats.end() && processed++ < max_rows) {
-         const auto role = roles.require_find(it->owner.value, "missing epoch role");
-         if (role->role == active_role) ++active_total;
-         const bool active_ok = role->role == active_role && it->expected > 0 && it->produced > 0 &&
+         if (it->role == active_role) ++active_total;
+         const bool active_ok = it->role == active_role && it->expected > 0 && it->produced > 0 &&
             uint64_t(it->produced) * basis_points >= uint64_t(it->expected) * config.active_min_bp;
-         const bool standby_ok = role->role == standby_role && it->standby_proofs >= config.standby_min_proofs;
+         const bool standby_ok = it->role == standby_role && it->standby_proofs >= config.standby_min_proofs;
          const uint64_t score = active_ok ? it->produced : 0;
          stats.modify(it, eosio::same_payer, [&](auto& row) {
             row.eligible = active_ok || standby_ok; row.score = score;
@@ -261,9 +285,8 @@ void system_contract::settlenext(uint64_t epoch_id, uint16_t max_rows) {
    while (it != stats.end() && processed++ < max_rows) {
       cursor = it->owner;
       if (!it->eligible) { ++it; continue; }
-      const auto role = roles.require_find(it->owner.value, "missing epoch role");
       int64_t amount = 0;
-      if (role->role == active_role) {
+      if (it->role == active_role) {
          ++active_paid;
          if (active_paid == settlement->active_eligible) {
             amount = settlement->active_pool.amount - active_allocated;
