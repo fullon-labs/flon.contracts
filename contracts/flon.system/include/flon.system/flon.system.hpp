@@ -676,25 +676,18 @@ namespace eosiosystem {
          // }
 
          #ifdef ENABLE_VOTING_PRODUCER
-         // Actions:
          /**
-          * The Init elect action initializes the election of producers.
-          * Only succeeds when:
-          * - has self auth
-          * - symbol of initial_rewards_per_block is core symbol
-          * - amount of initial_rewards_per_block is not negtive
-          * - election_activated_time can not less than now when election wasn’t already been initialized
-          * - election_activated_time can not be change when election was already been initialized
-          * - reward_started_time can not less than election_activated_time
-          * - reward_started_time can not less than now when reward wasn’t already been started
-          * - reward_started_time can not be changed when reward was already started
-          * - initial_rewards_per_block can not be changed when reward was already started
+          * Configure vote-ranked producer scheduling and base block-production rewards.
+          * Gas-funded FLON rewards are configured separately by setgasrwcfg.
           *
-          * @param election_activated_time - election activated time
-          * @param initial_rewards_per_block - reward per block.
+          * @param schedule_start - time at which vote-ranked producer schedules become active
+          * @param reward_epoch_start - epoch-zero and base reward start; must not precede schedule_start
+          * @param initial_block_reward - initial FLON reward generated per produced block
           */
          [[eosio::action]]
-         void cfgelection( const time_point& election_activated_time, const time_point& reward_started_time, const asset& initial_rewards_per_block);
+         void setprodcfg( const time_point& schedule_start, const time_point& reward_epoch_start,
+                          const asset& initial_block_reward );
+
          #endif//ENABLE_VOTING_PRODUCER
 
          /**
@@ -1156,6 +1149,7 @@ namespace eosiosystem {
          using voteproducer_action = eosio::action_wrapper<"voteproducer"_n, &system_contract::voteproducer>;
          // using voteupdate_action = eosio::action_wrapper<"voteupdate"_n, &system_contract::voteupdate>;
          using claimrewards_action = eosio::action_wrapper<"claimrewards"_n, &system_contract::claimrewards>;
+         using setprodcfg_action = eosio::action_wrapper<"setprodcfg"_n, &system_contract::setprodcfg>;
          using closeepoch_action = eosio::action_wrapper<"closeepoch"_n, &system_contract::closeepoch>;
          using rmvproducer_action = eosio::action_wrapper<"rmvproducer"_n, &system_contract::rmvproducer>;
          #endif//ENABLE_VOTING_PRODUCER

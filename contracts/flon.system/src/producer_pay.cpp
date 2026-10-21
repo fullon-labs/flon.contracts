@@ -527,32 +527,33 @@ namespace eosiosystem {
       epoch_state_tbl.set(epoch_state, get_self());
    }
 
-   void system_contract::cfgelection( const time_point& election_activated_time, const time_point& reward_started_time, const asset& initial_rewards_per_block) {
+   void system_contract::setprodcfg( const time_point& schedule_start, const time_point& reward_epoch_start,
+                                     const asset& initial_block_reward ) {
       require_auth(get_self());
 
-      const auto& core_symb = core_symbol();
-      check(initial_rewards_per_block.symbol == core_symb, "reward symbol mismatch with core symbol");
-      check(initial_rewards_per_block.amount >= 0, "reward can not be negative");
+      check(initial_block_reward.symbol == core_symbol(), "block reward symbol must be the core symbol");
+      check(initial_block_reward.amount >= 0, "initial block reward cannot be negative");
 
       const auto& now = eosio::current_time_point();
       if (_gstate.election_activated_time == time_point() || _gstate.election_activated_time > now ) {
-         check(election_activated_time > now, "election activated time must larger than now");
-         _gstate.election_activated_time = election_activated_time;
+         check(schedule_start > now, "producer schedule start must be in the future");
+         _gstate.election_activated_time = schedule_start;
       } else {
-         check( election_activated_time == _gstate.election_activated_time,
-            "can not change election activated time after election has already been activated");
+         check( schedule_start == _gstate.election_activated_time,
+            "producer schedule start cannot change after activation");
       }
 
-      check(reward_started_time >= _gstate.election_activated_time, "reward start time can not less than election activated time");
+      check(reward_epoch_start >= _gstate.election_activated_time,
+            "reward epoch start cannot precede producer schedule start");
       if (_gstate.reward_started_time == time_point() || _gstate.reward_started_time > now ) {
-         check(reward_started_time > now, "reward start time must larger than now");
-         _gstate.reward_started_time = reward_started_time;
-         _gstate.initial_rewards_per_block = initial_rewards_per_block;
+         check(reward_epoch_start > now, "reward epoch start must be in the future");
+         _gstate.reward_started_time = reward_epoch_start;
+         _gstate.initial_rewards_per_block = initial_block_reward;
       } else {
-         check( reward_started_time == _gstate.reward_started_time,
-            "can not change reward start time after reward has already been started");
-         check( initial_rewards_per_block == _gstate.initial_rewards_per_block,
-            "can not change initial rewards per block after reward has already been started");
+         check( reward_epoch_start == _gstate.reward_started_time,
+            "reward epoch start cannot change after reward accounting has started");
+         check( initial_block_reward == _gstate.initial_rewards_per_block,
+            "initial block reward cannot change after reward accounting has started");
       }
    }
    #endif//ENABLE_VOTING_PRODUCER

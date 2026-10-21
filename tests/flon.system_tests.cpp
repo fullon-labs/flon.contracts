@@ -797,6 +797,14 @@ BOOST_FIXTURE_TEST_CASE( producer_self_stake_qualification_and_refund, eosio_sys
 } FC_LOG_AND_RETHROW()
 
 // Tests for voting
+BOOST_FIXTURE_TEST_CASE( producer_configuration_sets_initial_block_reward, eosio_system_tester ) try {
+   BOOST_REQUIRE_EQUAL(success(), setprodcfg());
+
+   const auto global = get_global_state();
+   BOOST_REQUIRE_EQUAL(core_sym::from_string("0.8000"),
+                       global["initial_rewards_per_block"].as<asset>());
+} FC_LOG_AND_RETHROW()
+
 BOOST_FIXTURE_TEST_CASE( producer_register_unregister, eosio_system_tester ) try {
    issue_and_transfer( "alice1111111", core_sym::from_string("1000.0000"),  config::system_account_name );
 

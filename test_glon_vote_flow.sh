@@ -34,7 +34,7 @@ if [[ "${GLON_FLOW_IN_DOCKER:-0}" != "1" ]]; then
     -e DEPLOY_TOKEN="${DEPLOY_TOKEN:-}" \
     -e DEPLOY_SYSTEM="${DEPLOY_SYSTEM:-}" \
     -e GRANT_CODE="${GRANT_CODE:-}" \
-    -e CONFIG_ELECTION="${CONFIG_ELECTION:-}" \
+    -e CONFIG_PRODUCER="${CONFIG_PRODUCER:-${CONFIG_ELECTION:-}}" \
     -e RUN_SUBVOTE="${RUN_SUBVOTE:-}" \
     -w "${SCRIPT_DIR}" \
     "${BUILD_CONTAINER}" \
@@ -52,7 +52,7 @@ fi
 : "${DEPLOY_TOKEN:=0}"
 : "${DEPLOY_SYSTEM:=1}"
 : "${GRANT_CODE:=1}"
-: "${CONFIG_ELECTION:=1}"
+: "${CONFIG_PRODUCER:=1}"
 : "${RUN_SUBVOTE:=1}"
 
 if [[ -z "${TEST_ACCOUNT:-}" ]]; then
@@ -312,8 +312,8 @@ fund_test_account() {
   run cli transfer flon "${TEST_ACCOUNT}" "${TEST_FUND}" "glon vote flow test" -p flon@active
 }
 
-configure_election_if_needed() {
-  if [[ "${CONFIG_ELECTION}" != "1" ]]; then
+configure_producer_if_needed() {
+  if [[ "${CONFIG_PRODUCER}" != "1" ]]; then
     return
   fi
 
@@ -324,13 +324,13 @@ configure_election_if_needed() {
     return
   fi
 
-  local activate_at
-  local reward_at
-  activate_at=$(date -u -d '+3 seconds' '+%Y-%m-%dT%H:%M:%S.000' 2>/dev/null || date -u -v+3S '+%Y-%m-%dT%H:%M:%S.000')
-  reward_at=$(date -u -d '+4 seconds' '+%Y-%m-%dT%H:%M:%S.000' 2>/dev/null || date -u -v+4S '+%Y-%m-%dT%H:%M:%S.000')
+  local schedule_start
+  local reward_epoch_start
+  schedule_start=$(date -u -d '+3 seconds' '+%Y-%m-%dT%H:%M:%S.000' 2>/dev/null || date -u -v+3S '+%Y-%m-%dT%H:%M:%S.000')
+  reward_epoch_start=$(date -u -d '+4 seconds' '+%Y-%m-%dT%H:%M:%S.000' 2>/dev/null || date -u -v+4S '+%Y-%m-%dT%H:%M:%S.000')
 
-  log "Configure election for subvote test"
-  push_action_checked flon cfgelection "[\"${activate_at}\",\"${reward_at}\",\"0.00000000 FLON\"]" -p flon@active
+  log "Configure producer schedule and reward epoch for subvote test"
+  push_action_checked flon setprodcfg "[\"${schedule_start}\",\"${reward_epoch_start}\",\"0.00000000 FLON\"]" -p flon@active
   sleep 5
 }
 
@@ -347,7 +347,7 @@ run_flow() {
   create_glon
   ensure_test_account
   fund_test_account
-  configure_election_if_needed
+  configure_producer_if_needed
 
   local stake_units
   local flon_before
