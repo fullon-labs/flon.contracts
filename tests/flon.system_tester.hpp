@@ -73,7 +73,7 @@ public:
       FC_ASSERT( core_symbol.decimals() == 4, "create_core_token assumes core token has 4 digits of precision" );
       create_currency( "flon.token"_n, config::system_account_name, asset(100000000000000, core_symbol) );
       create_currency( "flon.token"_n, config::system_account_name,
-                       asset(100000000000000, symbol(symbol_code("GLON"), core_symbol.precision())) );
+                       asset(100000000000000, symbol(core_symbol.precision(), "GLON")) );
       issue( asset(10000000000000, core_symbol) );
       BOOST_REQUIRE_EQUAL( asset(10000000000000, core_symbol), get_balance( "flon", core_symbol ) );
    }

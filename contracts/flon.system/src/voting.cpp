@@ -35,6 +35,35 @@ namespace eosiosystem {
       return (now_slot.slot - start_slot.slot) / reward_epoch_slots + 1;
    }
 
+   static asset default_min_bp_self_stake(const symbol& core) {
+      int64_t amount = 500'000;
+      for (uint8_t i = 0; i < core.precision(); ++i) {
+         check(amount <= std::numeric_limits<int64_t>::max() / 10,
+               "core precision is too large for the default BP self-stake");
+         amount *= 10;
+      }
+      return asset(amount, core);
+   }
+
+   static bp_stake_config get_bp_stake_config(name self, const symbol& core) {
+      bp_stake_config_singleton config_table(self, self.value);
+      if (config_table.exists()) return config_table.get();
+      return bp_stake_config{false, default_min_bp_self_stake(core), 21 * 24 * 60 * 60};
+   }
+
+   bool system_contract::has_min_bp_self_stake(const name& producer,
+                                                const bp_stake_config& config) const {
+      bp_self_stake_table self_stakes(get_self(), get_self().value);
+      const auto self_stake = self_stakes.find(producer.value);
+      return self_stake != self_stakes.end() && self_stake->staked >= config.min_self_stake;
+   }
+
+   void system_contract::check_min_bp_self_stake(const name& producer,
+                                                  const bp_stake_config& config) const {
+      check(has_min_bp_self_stake(producer, config),
+            "producer self-stake is below the minimum");
+   }
+
    #ifdef ENABLE_VOTING_PRODUCER
    void system_contract::register_producer(  const name& producer,
                                              const block_signing_authority& producer_authority,
@@ -48,6 +77,10 @@ namespace eosiosystem {
       }
 
       const auto& core_sym = core_symbol();
+      bp_stake_config_singleton stake_config_table(get_self(), get_self().value);
+      if (stake_config_table.exists()) {
+         check_min_bp_self_stake(producer, stake_config_table.get());
+      }
       auto prod = _producers.find( producer.value );
       const auto ct = current_time_point();
 
@@ -161,6 +194,84 @@ namespace eosiosystem {
       config.set(election_config{active_bp_quorum}, get_self());
    }
 
+   void system_contract::setbpstake(bool enforce_schedule, const asset& min_self_stake,
+                                    uint32_t unstake_delay_sec) {
+      require_auth(get_self());
+      check(min_self_stake.symbol == core_symbol(), "minimum self-stake must use the core symbol");
+      check(min_self_stake.amount > 0, "minimum self-stake must be positive");
+      check(unstake_delay_sec >= 24 * 60 * 60, "BP unstake delay must be at least one day");
+      check(unstake_delay_sec <= 365 * 24 * 60 * 60, "BP unstake delay cannot exceed one year");
+
+      bp_stake_config_singleton config(get_self(), get_self().value);
+      config.set(bp_stake_config{enforce_schedule, min_self_stake, unstake_delay_sec}, get_self());
+   }
+
+   void system_contract::stakebp(const name& owner, const asset& quantity) {
+      require_auth(owner);
+      check(quantity.symbol == core_symbol(), "BP self-stake must use the core symbol");
+      check(quantity.amount > 0, "BP self-stake must be positive");
+
+      eosio::token::transfer_action transfer_act{token_account, {{owner, active_permission}}};
+      transfer_act.send(owner, stake_account, quantity, "BP self-stake");
+
+      bp_self_stake_table self_stakes(get_self(), get_self().value);
+      auto stake = self_stakes.find(owner.value);
+      if (stake == self_stakes.end()) {
+         self_stakes.emplace(owner, [&](auto& row) {
+            row.owner = owner;
+            row.staked = quantity;
+         });
+      } else {
+         self_stakes.modify(stake, same_payer, [&](auto& row) { row.staked += quantity; });
+      }
+   }
+
+   void system_contract::unstakebp(const name& owner, const asset& quantity) {
+      require_auth(owner);
+      check(quantity.symbol == core_symbol(), "BP unstake quantity must use the core symbol");
+      check(quantity.amount > 0, "BP unstake quantity must be positive");
+
+      bp_self_stake_table self_stakes(get_self(), get_self().value);
+      auto stake = self_stakes.require_find(owner.value, "BP self-stake not found");
+      check(stake->staked >= quantity, "insufficient BP self-stake");
+
+      const asset remaining = stake->staked - quantity;
+      auto producer = _producers.find(owner.value);
+      if (producer != _producers.end() && producer->active()) {
+         const auto config = get_bp_stake_config(get_self(), core_symbol());
+         check(remaining >= config.min_self_stake,
+               "registered producer must retain the minimum self-stake");
+      }
+
+      bp_stake_refund_table refunds(get_self(), get_self().value);
+      check(refunds.find(owner.value) == refunds.end(), "BP self-stake refund already pending");
+      const auto config = get_bp_stake_config(get_self(), core_symbol());
+      refunds.emplace(owner, [&](auto& row) {
+         row.owner = owner;
+         row.quantity = quantity;
+         row.available_at = time_point_sec(current_time_point()) + seconds(config.unstake_delay_sec);
+      });
+
+      if (remaining.amount == 0) {
+         self_stakes.erase(stake);
+      } else {
+         self_stakes.modify(stake, same_payer, [&](auto& row) { row.staked = remaining; });
+      }
+   }
+
+   void system_contract::claimbpstake(const name& owner) {
+      require_auth(owner);
+      bp_stake_refund_table refunds(get_self(), get_self().value);
+      auto refund = refunds.require_find(owner.value, "BP self-stake refund not found");
+      check(refund->available_at <= time_point_sec(current_time_point()),
+            "BP self-stake refund is not available yet");
+
+      const asset quantity = refund->quantity;
+      refunds.erase(refund);
+      eosio::token::transfer_action transfer_act{token_account, {{stake_account, active_permission}}};
+      transfer_act.send(stake_account, owner, quantity, "BP self-stake refund");
+   }
+
    void system_contract::update_elected_producers( const block_timestamp& block_time ) {
       _gstate.last_producer_schedule_update = block_time;
 
@@ -172,6 +283,7 @@ namespace eosiosystem {
       election_config_singleton election_config_tbl(get_self(), get_self().value);
       const uint16_t active_bp_quorum = election_config_tbl.exists()
          ? election_config_tbl.get().active_bp_quorum : 21;
+      const auto stake_config = get_bp_stake_config(get_self(), core_symbol());
       top_producers.reserve(active_bp_quorum);
       proposed_finalizers.reserve(active_bp_quorum);
 
@@ -184,6 +296,7 @@ namespace eosiosystem {
       for( auto it = idx.cbegin(); it != idx.cend() &&
            top_producers.size() < active_bp_quorum && 0 < it->total_votes; ++it ) {
          if (!it->active()) continue;
+         if (stake_config.enforce_schedule && !has_min_bp_self_stake(it->owner, stake_config)) continue;
          if (performance_started && !is_performance_eligible(it->owner, performance_epoch)) continue;
          if( is_savanna ) {
             auto finalizer = _finalizers.find( it->owner.value );

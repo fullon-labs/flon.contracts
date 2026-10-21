@@ -377,6 +377,30 @@ namespace eosiosystem {
 
    typedef eosio::multi_index< "voterefund"_n, vote_refund >      vote_refund_table;
 
+   struct [[eosio::table("bpstakecfg"), eosio::contract("flon.system")]] bp_stake_config {
+      bool     enforce_schedule = false;
+      asset    min_self_stake;
+      uint32_t unstake_delay_sec = 21 * 24 * 60 * 60;
+   };
+   typedef eosio::singleton<"bpstakecfg"_n, bp_stake_config> bp_stake_config_singleton;
+
+   struct [[eosio::table, eosio::contract("flon.system")]] bp_self_stake {
+      name  owner;
+      asset staked;
+
+      uint64_t primary_key() const { return owner.value; }
+   };
+   typedef eosio::multi_index<"bpstakes"_n, bp_self_stake> bp_self_stake_table;
+
+   struct [[eosio::table, eosio::contract("flon.system")]] bp_stake_refund {
+      name           owner;
+      asset          quantity;
+      time_point_sec available_at;
+
+      uint64_t primary_key() const { return owner.value; }
+   };
+   typedef eosio::multi_index<"bpstkrefund"_n, bp_stake_refund> bp_stake_refund_table;
+
    static constexpr uint32_t reward_epoch_seconds = 6 * 60 * 60;
    static constexpr uint32_t reward_epoch_slots = reward_epoch_seconds * 2;
    static constexpr uint32_t producer_stats_query_limit = 100'000;
@@ -805,6 +829,23 @@ namespace eosiosystem {
          [[eosio::action]]
          void setbpquorum( uint16_t active_bp_quorum );
 
+         /** Configure BP self-stake qualification and its withdrawal delay. */
+         [[eosio::action]]
+         void setbpstake( bool enforce_schedule, const asset& min_self_stake,
+                          uint32_t unstake_delay_sec );
+
+         /** Lock FLON as the producer candidate's self-stake. */
+         [[eosio::action]]
+         void stakebp( const name& owner, const asset& quantity );
+
+         /** Move unlocked excess, or all stake after unregistering, into the delayed refund queue. */
+         [[eosio::action]]
+         void unstakebp( const name& owner, const asset& quantity );
+
+         /** Claim a matured BP self-stake refund. */
+         [[eosio::action]]
+         void claimbpstake( const name& owner );
+
          /**
           * Action to permanently transition to Savanna consensus.
           * Create the first generation of finalizer policy and activate
@@ -1108,6 +1149,10 @@ namespace eosiosystem {
          using unregprod_action = eosio::action_wrapper<"unregprod"_n, &system_contract::unregprod>;
          using resumeprod_action = eosio::action_wrapper<"resumeprod"_n, &system_contract::resumeprod>;
          using setbpquorum_action = eosio::action_wrapper<"setbpquorum"_n, &system_contract::setbpquorum>;
+         using setbpstake_action = eosio::action_wrapper<"setbpstake"_n, &system_contract::setbpstake>;
+         using stakebp_action = eosio::action_wrapper<"stakebp"_n, &system_contract::stakebp>;
+         using unstakebp_action = eosio::action_wrapper<"unstakebp"_n, &system_contract::unstakebp>;
+         using claimbpstake_action = eosio::action_wrapper<"claimbpstake"_n, &system_contract::claimbpstake>;
          using voteproducer_action = eosio::action_wrapper<"voteproducer"_n, &system_contract::voteproducer>;
          // using voteupdate_action = eosio::action_wrapper<"voteupdate"_n, &system_contract::voteupdate>;
          using claimrewards_action = eosio::action_wrapper<"claimrewards"_n, &system_contract::claimrewards>;
@@ -1157,6 +1202,8 @@ namespace eosiosystem {
          // defined in voting.cpp
          void register_producer( const name& producer, const eosio::block_signing_authority& producer_authority,
                                  const std::string& url, uint16_t location, optional<uint32_t> reward_shared_ratio );
+         bool has_min_bp_self_stake( const name& producer, const bp_stake_config& config ) const;
+         void check_min_bp_self_stake( const name& producer, const bp_stake_config& config ) const;
          void update_elected_producers( const block_timestamp& timestamp );
          void update_vote_allocations( const std::vector<name>& old_producers, int64_t old_votes,
                                        const std::vector<name>& new_producers, int64_t new_votes );

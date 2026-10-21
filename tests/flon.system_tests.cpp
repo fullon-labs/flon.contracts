@@ -749,6 +749,53 @@ BOOST_FIXTURE_TEST_CASE( stake_to_another_user_not_from_refund, eosio_system_tes
 BOOST_AUTO_TEST_SUITE_END()
 BOOST_AUTO_TEST_SUITE(eosio_system_producer_tests)
 
+BOOST_FIXTURE_TEST_CASE( producer_self_stake_qualification_and_refund, eosio_system_tester ) try {
+   const name producer = "alice1111111"_n;
+   const auto minimum = core_sym::from_string("500.0000");
+   issue_and_transfer(producer, core_sym::from_string("1000.0000"), config::system_account_name);
+
+   BOOST_REQUIRE_EQUAL(success(), push_action(config::system_account_name, "setbpstake"_n, mvo()
+      ("enforce_schedule", false)
+      ("min_self_stake", minimum)
+      ("unstake_delay_sec", 24 * 60 * 60)));
+
+   BOOST_REQUIRE_EQUAL(wasm_assert_msg("producer self-stake is below the minimum"),
+      push_action(producer, "regproducer"_n, mvo()
+         ("producer", producer)
+         ("producer_key", get_public_key(producer, "active"))
+         ("url", "")
+         ("location", 0)
+         ("reward_shared_ratio", 0)));
+
+   BOOST_REQUIRE_EQUAL(success(), push_action(producer, "stakebp"_n, mvo()
+      ("owner", producer)("quantity", core_sym::from_string("499.0000"))));
+   BOOST_REQUIRE_EQUAL(wasm_assert_msg("producer self-stake is below the minimum"),
+      push_action(producer, "regproducer"_n, mvo()
+         ("producer", producer)
+         ("producer_key", get_public_key(producer, "active"))
+         ("url", "")
+         ("location", 0)
+         ("reward_shared_ratio", 0)));
+
+   BOOST_REQUIRE_EQUAL(success(), push_action(producer, "stakebp"_n, mvo()
+      ("owner", producer)("quantity", core_sym::from_string("1.0000"))));
+   BOOST_REQUIRE_EQUAL(success(), regproducer(producer));
+
+   BOOST_REQUIRE_EQUAL(wasm_assert_msg("registered producer must retain the minimum self-stake"),
+      push_action(producer, "unstakebp"_n, mvo()
+         ("owner", producer)("quantity", core_sym::from_string("1.0000"))));
+
+   BOOST_REQUIRE_EQUAL(success(), push_action(producer, "unregprod"_n, mvo()("producer", producer)));
+   BOOST_REQUIRE_EQUAL(success(), push_action(producer, "unstakebp"_n, mvo()
+      ("owner", producer)("quantity", minimum)));
+   BOOST_REQUIRE_EQUAL(wasm_assert_msg("BP self-stake refund is not available yet"),
+      push_action(producer, "claimbpstake"_n, mvo()("owner", producer)));
+
+   produce_block(fc::days(1));
+   BOOST_REQUIRE_EQUAL(success(), push_action(producer, "claimbpstake"_n, mvo()("owner", producer)));
+   BOOST_REQUIRE_EQUAL(core_sym::from_string("1000.0000"), get_balance(producer));
+} FC_LOG_AND_RETHROW()
+
 // Tests for voting
 BOOST_FIXTURE_TEST_CASE( producer_register_unregister, eosio_system_tester ) try {
    issue_and_transfer( "alice1111111", core_sym::from_string("1000.0000"),  config::system_account_name );
@@ -1041,7 +1088,7 @@ BOOST_FIXTURE_TEST_CASE( vote_for_producer, eosio_system_tester, * boost::unit_t
    BOOST_REQUIRE_EQUAL( success(), addvote( "bob111111111", core_sym::from_string("11.0000"), core_sym::from_string("0.1111") ) );
    BOOST_REQUIRE_EQUAL( core_sym::from_string("1988.8889"), get_balance( "bob111111111" ) );
    BOOST_REQUIRE_EQUAL( asset::from_string("11.1111 GLON"),
-                        get_balance( "bob111111111", symbol(symbol_code("GLON"), 4) ) );
+                        get_balance( "bob111111111", symbol(4, "GLON") ) );
    REQUIRE_MATCHING_OBJECT( voter( "bob111111111", core_sym::from_string("11.1111") ), get_voter_info( "bob111111111" ) );
 
    //bob111111111 votes for alice1111111
@@ -1075,7 +1122,7 @@ BOOST_FIXTURE_TEST_CASE( vote_for_producer, eosio_system_tester, * boost::unit_t
    //carol1111111 unstakes part of the stake
    BOOST_REQUIRE_EQUAL( success(), subvote( "carol1111111", core_sym::from_string("2.0000"), core_sym::from_string("0.0002")/*"2.0000 EOS", "0.0002 EOS"*/ ) );
    BOOST_REQUIRE_EQUAL( asset::from_string("20.2220 GLON"),
-                        get_balance( "carol1111111", symbol(symbol_code("GLON"), 4) ) );
+                        get_balance( "carol1111111", symbol(4, "GLON") ) );
 
    //should decrease alice1111111's total_votes
    prod = get_producer_info( "alice1111111" );
@@ -1305,7 +1352,7 @@ BOOST_FIXTURE_TEST_CASE( vote_for_two_producers, eosio_system_tester, * boost::u
 
    // Adding stake while keeping two selections must recompute both retained allocations.
    issue_and_transfer( "alice1111111", core_sym::from_string("1.0001"), config::system_account_name );
-   BOOST_REQUIRE_EQUAL( success(), addvote( "alice1111111", core_sym::from_string("1.0001") ) );
+   BOOST_REQUIRE_EQUAL( success(), addvote( "alice1111111"_n, core_sym::from_string("1.0001") ) );
 
    alice_info = get_producer_info( "alice1111111" );
    BOOST_TEST_REQUIRE( stake2votes(core_sym::from_string("21.5005")) == alice_info["total_votes"].as_int64() );

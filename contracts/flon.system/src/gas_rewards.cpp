@@ -73,9 +73,15 @@ void system_contract::ensure_gas_epoch_roles(uint64_t epoch_id) {
    }
 
    auto by_votes = _producers.get_index<"prototalvote"_n>();
+   bp_stake_config_singleton bp_stake_config_table(get_self(), get_self().value);
+   const auto bp_stake_config = bp_stake_config_table.exists()
+      ? std::optional<eosiosystem::bp_stake_config>(bp_stake_config_table.get())
+      : std::nullopt;
    uint16_t standby_count = 0;
    for (auto it = by_votes.begin(); it != by_votes.end() && standby_count < 30; ++it) {
       if (!it->is_active || contains(active, it->owner)) continue;
+      if (bp_stake_config && bp_stake_config->enforce_schedule &&
+          !has_min_bp_self_stake(it->owner, *bp_stake_config)) continue;
       add_role(it->owner, standby_role);
       ++standby_count;
    }
