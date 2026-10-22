@@ -403,8 +403,11 @@ namespace eosiosystem {
 
    static constexpr uint32_t reward_epoch_seconds = 6 * 60 * 60;
    static constexpr uint32_t reward_epoch_slots = reward_epoch_seconds * 2;
-   static constexpr uint32_t producer_stats_query_limit = 100'000;
-   static constexpr uint32_t producer_stats_onblock_limit = 100'000;
+   // Keep native schedule reconstruction in onblock tightly bounded. Four
+   // minutes covers ordinary producer/network interruptions without allowing a
+   // long outage to turn the next block into a large linear-time operation.
+   static constexpr uint32_t producer_stats_onblock_limit = 480;
+   static constexpr uint32_t max_schedule_candidates_scanned = 256;
    static constexpr uint32_t min_expected_blocks = 12;
    static constexpr uint32_t probation_missed_streak_limit = 12;
    static constexpr uint32_t max_suspension_epochs = 8;
@@ -465,6 +468,9 @@ namespace eosiosystem {
 
    struct [[eosio::table("perfstate"), eosio::contract("flon.system")]] performance_accounting_state {
       uint32_t last_accounted_slot = 0;
+      // Version the singleton so a contract upgrade can safely re-bootstrap
+      // accounting instead of treating stale state as the current head slot.
+      binary_extension<uint8_t> version;
    };
    typedef eosio::singleton<"perfstate"_n, performance_accounting_state> performance_accounting_singleton;
 
@@ -523,10 +529,13 @@ namespace eosiosystem {
       uint16_t standby_min_proofs = 12;
       uint16_t pool_bp = 1'000;
       uint16_t active_share_bp = 8'000;
-      uint16_t active_base_bp = 4'000;
+      // Retains the serialized position of the removed base-share field so
+      // existing on-chain singleton rows remain readable after the upgrade.
+      uint16_t reserved_reward_bp = 0;
       uint64_t first_reward_epoch = 0;
       uint32_t last_accounted_slot = 0;
       uint64_t last_metered_gas_value = 0;
+      binary_extension<uint8_t> accounting_version;
    };
    using gas_reward_config_singleton = eosio::singleton<"gasrewcfg"_n, gas_reward_config>;
 
@@ -554,7 +563,8 @@ namespace eosiosystem {
       uint16_t standby_min_proofs;
       uint16_t pool_bp;
       uint16_t active_share_bp;
-      uint16_t active_base_bp;
+      // Retains the serialized position of the removed base-share field.
+      uint16_t reserved_reward_bp = 0;
       uint64_t primary_key() const { return epoch_id; }
    };
    using gas_epoch_configs = eosio::multi_index<"gasepochcfg"_n, gas_epoch_config>;
@@ -585,6 +595,9 @@ namespace eosiosystem {
       bool funded = false;
       bool incident_hold = false;
       bool finalized = false;
+      // Added at the end for binary compatibility with existing rows. Counts
+      // scheduled Active BPs that produced at least one block in the epoch.
+      binary_extension<uint32_t> active_reward_participants;
       uint64_t primary_key() const { return epoch_id; }
    };
    using gas_settlements = eosio::multi_index<"gassettles"_n, gas_settlement>;
@@ -1128,7 +1141,7 @@ namespace eosiosystem {
          [[eosio::action]]
          void setgasrwcfg(bool enabled, uint32_t epoch_slots, uint16_t active_min_bp,
                           uint16_t standby_min_proofs, uint16_t pool_bp,
-                          uint16_t active_share_bp, uint16_t active_base_bp);
+                          uint16_t active_share_bp);
 
          [[eosio::action]]
          void standbyproof(name owner, uint64_t epoch_id, uint32_t head_block_num,
@@ -1218,7 +1231,6 @@ namespace eosiosystem {
          uint64_t reward_epoch_for_slot( uint32_t slot ) const;
          void record_producer_slot_stats( const block_timestamp& timestamp );
          void accumulate_producer_slot_stats( uint64_t epoch_id, uint32_t from_slot, uint32_t to_slot );
-         void enforce_probation_fuse( uint64_t epoch_id );
          uint64_t suspension_cooldown_epochs( uint32_t suspension_count ) const;
          bool is_performance_eligible( const name& producer, uint64_t epoch_id ) const;
          uint32_t reward_factor_basis_points( const bp_performance* stats, bool network_incident ) const;

@@ -92,10 +92,33 @@ namespace eosiosystem {
                const uint64_t updated_streak = all_assigned_slots_missed
                   ? static_cast<uint64_t>(prior_streak) + sample.missed
                   : sample.trailing_missed_streak;
+               const bool suspend = updated_streak >= probation_missed_streak_limit;
+               const uint32_t suspension_count = state_itr->suspension_count + (suspend ? 1 : 0);
+               const uint32_t warning_count = state_itr->warning_count + (suspend ? 1 : 0);
+               const uint64_t suspended_until = suspend
+                  ? epoch_id + suspension_cooldown_epochs(suspension_count) + 1
+                  : state_itr->suspended_until_epoch;
                states.modify(state_itr, same_payer, [&](auto& row) {
                   row.probation_missed_streak = static_cast<uint32_t>(
                      std::min<uint64_t>(updated_streak, std::numeric_limits<uint32_t>::max()));
+                  if (suspend) {
+                     row.status = static_cast<uint8_t>(bp_performance_status::suspended);
+                     row.warning_count = warning_count;
+                     row.suspension_count = suspension_count;
+                     row.suspended_until_epoch = suspended_until;
+                     row.probation_started_epoch = 0;
+                     row.probation_missed_streak = 0;
+                  }
                });
+               if (suspend) {
+                  auto stats_itr = bp_stats.find(sample.producer.value);
+                  if (stats_itr != bp_stats.end()) {
+                     bp_stats.modify(stats_itr, same_payer, [&](auto& row) {
+                        row.status = static_cast<uint8_t>(bp_performance_status::suspended);
+                        row.warning_count = warning_count;
+                     });
+                  }
+               }
             }
          }
       }
@@ -123,12 +146,16 @@ namespace eosiosystem {
       performance_accounting_singleton accounting(get_self(), get_self().value);
       auto state = accounting.exists() ? accounting.get() : performance_accounting_state{};
 
-      // On the first block after this feature is deployed, begin with the pending
-      // block. Historical slots are deliberately not guessed or queried.
-      uint64_t from_slot = state.last_accounted_slot == 0
-                              ? timestamp.slot
-                              : static_cast<uint64_t>(state.last_accounted_slot) + 1;
-      check(from_slot <= timestamp.slot, "producer slot accounting moved backwards");
+      static constexpr uint8_t performance_accounting_version = 1;
+      const bool current_version = state.version.has_value() &&
+                                   state.version.value() == performance_accounting_version;
+
+      // A contract upgrade must not trust a cursor written by an older
+      // accounting implementation. Bootstrap with the pending block, then use
+      // only the cursor committed by the preceding successful onblock.
+      uint64_t from_slot = current_version && state.last_accounted_slot < timestamp.slot
+                              ? static_cast<uint64_t>(state.last_accounted_slot) + 1
+                              : timestamp.slot;
 
       // The intrinsic can only inspect the gap between the current head and
       // this pending block. Do not attempt an unbounded catch-up inside
@@ -138,6 +165,7 @@ namespace eosiosystem {
       const uint64_t pending_slot_count = static_cast<uint64_t>(timestamp.slot) - from_slot + 1;
       if (pending_slot_count > producer_stats_onblock_limit) {
          state.last_accounted_slot = timestamp.slot;
+         state.version = performance_accounting_version;
          accounting.set(state, get_self());
          return;
       }
@@ -147,16 +175,14 @@ namespace eosiosystem {
          const uint64_t epoch_id = reward_epoch_for_slot(static_cast<uint32_t>(from_slot));
          const uint64_t epoch_end = static_cast<uint64_t>(reward_start.slot) +
                                     (epoch_id + 1) * reward_epoch_slots - 1;
-         const uint64_t query_end = std::min<uint64_t>(
-            timestamp.slot,
-            std::min<uint64_t>(epoch_end, from_slot + producer_stats_query_limit - 1));
+         const uint64_t query_end = std::min<uint64_t>(timestamp.slot, epoch_end);
          accumulate_producer_slot_stats(epoch_id, static_cast<uint32_t>(from_slot),
                                         static_cast<uint32_t>(query_end));
-         enforce_probation_fuse(epoch_id);
          from_slot = query_end + 1;
       }
 
       state.last_accounted_slot = timestamp.slot;
+      state.version = performance_accounting_version;
       accounting.set(state, get_self());
    }
 
@@ -172,39 +198,6 @@ namespace eosiosystem {
       if (suspension_count == 0) return 1;
       const uint32_t shift = std::min<uint32_t>(suspension_count - 1, 3);
       return std::min<uint64_t>(uint64_t{1} << shift, max_suspension_epochs);
-   }
-
-   void system_contract::enforce_probation_fuse( uint64_t epoch_id ) {
-      bp_performance_table bp_stats(get_self(), epoch_id);
-      producer_performance_state_table states(get_self(), get_self().value);
-
-      for (auto state_itr = states.begin(); state_itr != states.end(); ++state_itr) {
-         if (state_itr->status != static_cast<uint8_t>(bp_performance_status::probation)) continue;
-
-         const uint32_t missed_streak = state_itr->probation_missed_streak.has_value()
-                                          ? state_itr->probation_missed_streak.value() : 0;
-         if (missed_streak < probation_missed_streak_limit) continue;
-
-         auto stats_itr = bp_stats.find(state_itr->producer.value);
-         if (stats_itr == bp_stats.end()) continue;
-
-         const uint32_t suspension_count = state_itr->suspension_count + 1;
-         const uint32_t warning_count = state_itr->warning_count + 1;
-         const uint64_t suspended_until = epoch_id +
-                                          suspension_cooldown_epochs(suspension_count) + 1;
-         states.modify(state_itr, same_payer, [&](auto& row) {
-            row.status = static_cast<uint8_t>(bp_performance_status::suspended);
-            row.warning_count = warning_count;
-            row.suspension_count = suspension_count;
-            row.suspended_until_epoch = suspended_until;
-            row.probation_started_epoch = 0;
-            row.probation_missed_streak = 0;
-         });
-         bp_stats.modify(stats_itr, same_payer, [&](auto& row) {
-            row.status = static_cast<uint8_t>(bp_performance_status::suspended);
-            row.warning_count = warning_count;
-         });
-      }
    }
 
    uint32_t system_contract::reward_factor_basis_points( const bp_performance* stats,
@@ -254,17 +247,9 @@ namespace eosiosystem {
          record_producer_slot_stats(timestamp);
       }
 
-      // Close at most one overdue epoch per block. Under normal operation this
-      // runs exactly once at the first block of a new six-hour epoch; the
-      // bounded catch-up behavior avoids an unbounded onblock loop after a gap.
-      if (_gstate.reward_started_time != time_point() && now >= _gstate.reward_started_time) {
-         reward_epoch_singleton epoch_state_tbl(get_self(), get_self().value);
-         const auto epoch_state = epoch_state_tbl.exists()
-                                    ? epoch_state_tbl.get() : reward_epoch_state{};
-         if (epoch_state.next_epoch_to_close < current_reward_epoch(now)) {
-            closeepoch(epoch_state.next_epoch_to_close);
-         }
-      }
+      // Epoch settlement is intentionally transaction-driven. It performs
+      // reward transfers and table scans that must never delay block production
+      // or make every speculative onblock repeat a failing settlement.
 
       /**
        * At startup the initial producer may not be one that is registered / elected
