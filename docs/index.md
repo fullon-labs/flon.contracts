@@ -26,3 +26,7 @@ The `eos-system-contracts` repository contains the system contracts encapsulatin
 ## Build and deploy
 
 To build and deploy the system contract follow the instruction from [Build and deploy](03_build-and-deploy.md) section.
+
+## Operations
+
+- [BP 投票竞选上线与运行操作手册](04_guides/08_bp_election_launch_runbook_cn.md)
