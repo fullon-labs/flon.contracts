@@ -293,8 +293,11 @@ namespace eosiosystem {
       const uint64_t performance_epoch = performance_started
                                            ? current_reward_epoch(current_time_point()) : 0;
 
+      uint32_t candidates_scanned = 0;
       for( auto it = idx.cbegin(); it != idx.cend() &&
-           top_producers.size() < active_bp_quorum && 0 < it->total_votes; ++it ) {
+           top_producers.size() < active_bp_quorum && 0 < it->total_votes &&
+           candidates_scanned < max_schedule_candidates_scanned;
+           ++it, ++candidates_scanned ) {
          if (!it->active()) continue;
          if (stake_config.enforce_schedule && !has_min_bp_self_stake(it->owner, stake_config)) continue;
          if (performance_started && !is_performance_eligible(it->owner, performance_epoch)) continue;

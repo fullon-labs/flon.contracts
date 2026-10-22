@@ -7,11 +7,11 @@
 namespace eosiosystem {
 
 namespace {
+constexpr uint8_t gas_accounting_version = 1;
 constexpr uint8_t active_role = 1;
 constexpr uint8_t standby_role = 2;
 constexpr uint16_t basis_points = 10'000;
 constexpr uint16_t max_settle_rows = 10;
-constexpr uint16_t active_target_seats = 21;
 constexpr uint16_t standby_target_seats = 30;
 
 bool contains(const std::vector<name>& values, name value) {
@@ -28,12 +28,11 @@ int64_t mul_div(int64_t value, uint64_t multiplier, uint64_t divisor,
 
 void system_contract::setgasrwcfg(bool enabled, uint32_t epoch_slots,
                                   uint16_t active_min_bp, uint16_t standby_min_proofs,
-                                  uint16_t pool_bp, uint16_t active_share_bp,
-                                  uint16_t active_base_bp) {
+                                  uint16_t pool_bp, uint16_t active_share_bp) {
    require_auth(get_self());
    check(epoch_slots >= 1'200, "epoch must contain at least 1200 slots");
    check(active_min_bp <= basis_points && pool_bp <= basis_points &&
-         active_share_bp <= basis_points && active_base_bp <= basis_points,
+         active_share_bp <= basis_points,
          "basis point value exceeds 10000");
    check(standby_min_proofs > 0, "standby proof threshold must be positive");
    check(standby_min_proofs <= epoch_slots,
@@ -46,13 +45,14 @@ void system_contract::setgasrwcfg(bool enabled, uint32_t epoch_slots,
          check(!enabled, "disable gas rewards before changing configuration");
          check(epoch_slots == old.epoch_slots && active_min_bp == old.active_min_bp &&
                standby_min_proofs == old.standby_min_proofs && pool_bp == old.pool_bp &&
-               active_share_bp == old.active_share_bp && active_base_bp == old.active_base_bp,
+               active_share_bp == old.active_share_bp,
                "configuration cannot change while enabled");
       }
    }
 
    gas_reward_config next{enabled, epoch_slots, active_min_bp, standby_min_proofs,
-                          pool_bp, active_share_bp, active_base_bp, 0, 0};
+                          pool_bp, active_share_bp, 0, 0, 0,
+                          gas_accounting_version};
    config.set(next, get_self());
 }
 
@@ -78,7 +78,11 @@ void system_contract::ensure_gas_epoch_roles(uint64_t epoch_id) {
       ? std::optional<eosiosystem::bp_stake_config>(bp_stake_config_table.get())
       : std::nullopt;
    uint16_t standby_count = 0;
-   for (auto it = by_votes.begin(); it != by_votes.end() && standby_count < 30; ++it) {
+   uint32_t candidates_scanned = 0;
+   for (auto it = by_votes.begin();
+        it != by_votes.end() && standby_count < standby_target_seats &&
+        candidates_scanned < max_schedule_candidates_scanned;
+        ++it, ++candidates_scanned) {
       if (!it->is_active || contains(active, it->owner)) continue;
       if (bp_stake_config && bp_stake_config->enforce_schedule &&
           !has_min_bp_self_stake(it->owner, *bp_stake_config)) continue;
@@ -95,15 +99,33 @@ void system_contract::accumulate_gas_node_stats(uint32_t current_slot) {
 
    const auto totals = eosio::get_gas_fee_totals();
    ensure_gas_epoch_roles(current_slot / config.epoch_slots);
-   if (config.last_accounted_slot == 0) {
+   const bool current_version = config.accounting_version.has_value() &&
+                                config.accounting_version.value() == gas_accounting_version;
+   if (!current_version || config.last_accounted_slot == 0 ||
+       config.last_accounted_slot >= current_slot) {
+      // Bootstrap after deployment/upgrades instead of trusting a cursor from
+      // an older accounting implementation.
       config.last_accounted_slot = current_slot;
       config.last_metered_gas_value = totals.total_gas_value_flon;
+      config.accounting_version = gas_accounting_version;
       config_table.set(config, get_self());
       return;
    }
    check(current_slot > config.last_accounted_slot, "block slot must increase");
    check(totals.total_gas_value_flon >= config.last_metered_gas_value,
          "gas fee total cannot decrease");
+
+   const uint64_t pending_slot_count =
+      static_cast<uint64_t>(current_slot) - config.last_accounted_slot;
+   if (pending_slot_count > producer_stats_onblock_limit) {
+      // Never reconstruct an arbitrarily large missed-slot range from onblock.
+      // The gas delta cannot be assigned to node performance fairly after such
+      // a gap, so re-bootstrap both baselines and leave the interval unrewarded.
+      config.last_accounted_slot = current_slot;
+      config.last_metered_gas_value = totals.total_gas_value_flon;
+      config_table.set(config, get_self());
+      return;
+   }
 
    // The delta visible at the start of this block belongs to the previously
    // accounted block, not to the current epoch's pending block.
@@ -212,36 +234,43 @@ void system_contract::settlenext(uint64_t epoch_id, uint16_t max_rows) {
    if (settlement->phase == 1) {
       uint64_t active_score = settlement->active_score;
       uint32_t active_total = settlement->active_total;
-      uint32_t active_count = settlement->active_eligible;
+      uint32_t active_qualified = settlement->active_eligible;
+      uint32_t active_participants = settlement->active_reward_participants.has_value()
+         ? settlement->active_reward_participants.value()
+         : 0;
       uint32_t standby_count = settlement->standby_eligible;
       name cursor = settlement->cursor;
       while (it != stats.end() && processed++ < max_rows) {
          const auto role = roles.require_find(it->owner.value, "missing epoch role");
          if (role->role == active_role) ++active_total;
-         const bool active_ok = role->role == active_role && it->expected > 0 && it->produced > 0 &&
+         const bool active_participated = role->role == active_role && it->produced > 0;
+         const bool active_qualified_for_status = active_participated && it->expected > 0 &&
             uint64_t(it->produced) * basis_points >= uint64_t(it->expected) * config.active_min_bp;
          const bool standby_ok = role->role == standby_role && it->standby_proofs >= config.standby_min_proofs;
-         const uint64_t score = active_ok ? it->produced : 0;
+         const uint64_t score = active_participated ? it->produced : 0;
          stats.modify(it, eosio::same_payer, [&](auto& row) {
-            row.eligible = active_ok || standby_ok; row.score = score;
+            row.eligible = active_participated || standby_ok; row.score = score;
          });
-         if (active_ok) { active_score += score; ++active_count; }
+         if (active_participated) { active_score += score; ++active_participants; }
+         if (active_qualified_for_status) ++active_qualified;
          if (standby_ok) ++standby_count;
          cursor = it->owner; ++it;
       }
       const bool done = it == stats.end();
       settlements.modify(settlement, eosio::same_payer, [&](auto& row) {
-         row.active_score = active_score; row.active_total = active_total; row.active_eligible = active_count;
+         row.active_score = active_score; row.active_total = active_total;
+         row.active_eligible = active_qualified;
+         row.active_reward_participants = active_participants;
          row.standby_eligible = standby_count; row.cursor = done ? name{} : cursor;
          if (done) {
-            row.incident_hold = active_total > 0 && uint64_t(active_count) * 3 < uint64_t(active_total) * 2;
+            row.incident_hold = active_total > 0 &&
+               uint64_t(active_qualified) * 3 < uint64_t(active_total) * 2;
             row.phase = row.incident_hold ? 4 : 2;
-            // Normalize against the final 21 Active / 30 Standby targets. A
-            // smaller launch schedule therefore cannot divide the full pool
-            // among a few early operators. Unreleased FLON remains in flon.gas.
-            row.active_pool.amount = active_count
-               ? mul_div(row.pool.amount, uint64_t(config.active_share_bp) * active_count,
-                         uint64_t(basis_points) * active_target_seats,
+            // Every scheduled Active BP participates according to actual block
+            // production. The configured Active share is released in full even
+            // when the governed quorum is below the final 21-producer target.
+            row.active_pool.amount = active_participants
+               ? mul_div(row.pool.amount, config.active_share_bp, basis_points,
                          "active reward pool overflow")
                : 0;
             const uint16_t standby_share_bp = basis_points - config.active_share_bp;
@@ -276,6 +305,9 @@ void system_contract::settlenext(uint64_t epoch_id, uint16_t max_rows) {
    int64_t standby_allocated = settlement->standby_allocated.amount;
    uint32_t active_paid = settlement->active_paid_count;
    uint32_t standby_paid = settlement->standby_paid_count;
+   const uint32_t active_participants = settlement->active_reward_participants.has_value()
+      ? settlement->active_reward_participants.value()
+      : 0;
    while (it != stats.end() && processed++ < max_rows) {
       cursor = it->owner;
       if (!it->eligible) { ++it; continue; }
@@ -283,20 +315,12 @@ void system_contract::settlenext(uint64_t epoch_id, uint16_t max_rows) {
       int64_t amount = 0;
       if (role->role == active_role) {
          ++active_paid;
-         if (active_paid == settlement->active_eligible) {
+         if (active_paid == active_participants) {
             amount = settlement->active_pool.amount - active_allocated;
          } else {
-            const int64_t base_pool = mul_div(settlement->active_pool.amount,
-                                              config.active_base_bp, basis_points,
-                                              "active base pool overflow");
-            const int64_t performance_pool = settlement->active_pool.amount - base_pool;
-            const int64_t performance_amount = mul_div(performance_pool, it->score,
-                                                       settlement->active_score,
-                                                       "active performance reward overflow");
-            check(base_pool / settlement->active_eligible <=
-                     std::numeric_limits<int64_t>::max() - performance_amount,
-                  "active node reward overflow");
-            amount = base_pool / settlement->active_eligible + performance_amount;
+            amount = mul_div(settlement->active_pool.amount, it->score,
+                             settlement->active_score,
+                             "active performance reward overflow");
          }
          check(amount <= settlement->active_pool.amount - active_allocated,
                "active allocation exceeds pool");
