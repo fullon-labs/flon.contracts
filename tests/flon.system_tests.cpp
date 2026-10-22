@@ -797,12 +797,22 @@ BOOST_FIXTURE_TEST_CASE( producer_self_stake_qualification_and_refund, eosio_sys
 } FC_LOG_AND_RETHROW()
 
 // Tests for voting
-BOOST_FIXTURE_TEST_CASE( producer_configuration_sets_initial_block_reward, eosio_system_tester ) try {
+BOOST_FIXTURE_TEST_CASE( producer_configuration_uses_fixed_reward_schedule, eosio_system_tester ) try {
    BOOST_REQUIRE_EQUAL(success(), setprodcfg());
 
    const auto global = get_global_state();
-   BOOST_REQUIRE_EQUAL(core_sym::from_string("0.8000"),
+   BOOST_REQUIRE_EQUAL(core_sym::from_string("0.0000"),
                        global["initial_rewards_per_block"].as<asset>());
+} FC_LOG_AND_RETHROW()
+
+BOOST_FIXTURE_TEST_CASE( producer_configuration_rejects_legacy_reward_override, eosio_system_tester ) try {
+   const auto start_time = control->pending_block_time();
+   BOOST_REQUIRE_EQUAL(
+      wasm_assert_msg("initial block reward is fixed by protocol; compatibility field must be zero"),
+      push_action(config::system_account_name, "setprodcfg"_n, mvo()
+         ("schedule_start", start_time)
+         ("reward_epoch_start", start_time)
+         ("initial_block_reward", core_sym::from_string("0.8000"))));
 } FC_LOG_AND_RETHROW()
 
 BOOST_FIXTURE_TEST_CASE( producer_register_unregister, eosio_system_tester ) try {

@@ -15,12 +15,69 @@ namespace eosiosystem {
    using eosio::token;
 
 
-   inline constexpr int64_t power(int64_t base, int64_t exp) {
-      int64_t ret = 1;
-      while( exp > 0  ) {
-         ret *= base; --exp;
+   int64_t mining_reward_cap_amount(const symbol& core) {
+      constexpr int64_t mining_reward_cap_tokens = 500000000;
+      int64_t scale = 1;
+      for (uint8_t i = 0; i < core.precision(); ++i) {
+         check(scale <= std::numeric_limits<int64_t>::max() / 10,
+               "core token precision is too large for the mining cap");
+         scale *= 10;
       }
-      return ret;
+      check(scale <= std::numeric_limits<int64_t>::max() / mining_reward_cap_tokens,
+            "mining cap exceeds asset amount range");
+      return mining_reward_cap_tokens * scale;
+   }
+
+   int64_t scheduled_reward_for_block(uint64_t rewarded_block_count,
+                                      int64_t mining_cap_amount) {
+      const uint64_t era = rewarded_block_count / reward_halving_period_blocks;
+      // Once the integer era budget reaches zero, no further smallest units can
+      // be issued. Avoid an undefined shift for very large era numbers.
+      if (era >= 63)
+         return 0;
+
+      const int64_t era_budget = mining_cap_amount / (int64_t{1} << (era + 1));
+      if (era_budget <= 0)
+         return 0;
+
+      const uint64_t offset = rewarded_block_count % reward_halving_period_blocks;
+      using uint128_t = unsigned __int128;
+      const auto cumulative_after = static_cast<int64_t>(
+         (uint128_t(offset + 1) * static_cast<uint64_t>(era_budget)) /
+         reward_halving_period_blocks);
+      const auto cumulative_before = static_cast<int64_t>(
+         (uint128_t(offset) * static_cast<uint64_t>(era_budget)) /
+         reward_halving_period_blocks);
+      return cumulative_after - cumulative_before;
+   }
+
+   uint64_t rewarded_block_count_from_issued(int64_t issued_amount,
+                                             int64_t mining_cap_amount) {
+      if (issued_amount <= 0)
+         return 0;
+
+      uint64_t count = 0;
+      int64_t remaining_issued = std::min(issued_amount, mining_cap_amount);
+      using uint128_t = unsigned __int128;
+      for (uint64_t era = 0; era < 63; ++era) {
+         const int64_t era_budget = mining_cap_amount / (int64_t{1} << (era + 1));
+         if (era_budget <= 0)
+            break;
+         if (remaining_issued >= era_budget) {
+            remaining_issued -= era_budget;
+            count += reward_halving_period_blocks;
+            continue;
+         }
+
+         // Round up so a legacy amount that did not land exactly on this
+         // schedule can never restart from an earlier, higher-paying block.
+         const auto numerator = uint128_t(static_cast<uint64_t>(remaining_issued)) *
+                                reward_halving_period_blocks +
+                                static_cast<uint64_t>(era_budget) - 1;
+         count += static_cast<uint64_t>(numerator / static_cast<uint64_t>(era_budget));
+         return count;
+      }
+      return count;
    }
 
    uint64_t system_contract::current_reward_epoch( const time_point& now ) const {
@@ -257,25 +314,43 @@ namespace eosiosystem {
        */
       auto prod = _producers.find( producer.value );
       if ( prod != _producers.end() && _gstate.reward_started_time != time_point() && now >= _gstate.reward_started_time ) {
-         // cur_period start at 0
-         int64_t cur_period = (now - _gstate.reward_started_time).to_seconds() / reward_halving_period_seconds;
-         auto rewards_per_block = _gstate.initial_rewards_per_block.amount / power(2, cur_period);
-         const uint64_t epoch_id = current_reward_epoch(now);
-         epoch_rewards_table epoch_rewards(get_self(), epoch_id);
-         auto reward_itr = epoch_rewards.find(producer.value);
-         if (reward_itr == epoch_rewards.end()) {
-            epoch_rewards.emplace(get_self(), [&](auto& row) {
-               row.producer = producer;
-               row.rewards = asset(rewards_per_block, core_symbol());
-               row.reward_shared_ratio = prod->reward_shared_ratio;
-            });
-         } else {
-            epoch_rewards.modify(reward_itr, same_payer, [&](auto& row) {
-               row.rewards.amount += rewards_per_block;
-            });
+         // Preserve the live-chain global-row layout by reusing the deprecated
+         // initial reward amount as an internal counter. Old non-negative values
+         // mean "not migrated"; a negative amount encodes the number of reward-
+         // eligible blocks already processed.
+         const int64_t mining_cap = mining_reward_cap_amount(core_symbol());
+         const uint64_t rewarded_block_count = _gstate.initial_rewards_per_block.amount < 0
+            ? static_cast<uint64_t>(-_gstate.initial_rewards_per_block.amount)
+            : rewarded_block_count_from_issued(_gstate.total_produced_rewards.amount, mining_cap);
+         const int64_t remaining = std::max<int64_t>(0, mining_cap - _gstate.total_produced_rewards.amount);
+         auto rewards_per_block = std::min(
+            scheduled_reward_for_block(rewarded_block_count, mining_cap), remaining);
+         check(rewarded_block_count < static_cast<uint64_t>(std::numeric_limits<int64_t>::max()),
+               "rewarded block counter overflow");
+         _gstate.initial_rewards_per_block.amount =
+            -static_cast<int64_t>(rewarded_block_count + 1);
+
+         // Very late eras can contain blocks with a zero smallest-unit reward.
+         // They still advance the deterministic reward-block schedule, but do
+         // not create empty epoch rows or alter reward totals.
+         if (rewards_per_block > 0) {
+            const uint64_t epoch_id = current_reward_epoch(now);
+            epoch_rewards_table epoch_rewards(get_self(), epoch_id);
+            auto reward_itr = epoch_rewards.find(producer.value);
+            if (reward_itr == epoch_rewards.end()) {
+               epoch_rewards.emplace(get_self(), [&](auto& row) {
+                  row.producer = producer;
+                  row.rewards = asset(rewards_per_block, core_symbol());
+                  row.reward_shared_ratio = prod->reward_shared_ratio;
+               });
+            } else {
+               epoch_rewards.modify(reward_itr, same_payer, [&](auto& row) {
+                  row.rewards.amount += rewards_per_block;
+               });
+            }
+            _gstate.total_produced_rewards.amount += rewards_per_block;
+            _gstate.total_unclaimed_rewards.amount += rewards_per_block;
          }
-         _gstate.total_produced_rewards.amount += rewards_per_block;
-         _gstate.total_unclaimed_rewards.amount += rewards_per_block;
       }
 
       /// only update block producers once every minute, block_timestamp is in half seconds
@@ -516,8 +591,10 @@ namespace eosiosystem {
                                      const asset& initial_block_reward ) {
       require_auth(get_self());
 
-      check(initial_block_reward.symbol == core_symbol(), "block reward symbol must be the core symbol");
-      check(initial_block_reward.amount >= 0, "initial block reward cannot be negative");
+      check(initial_block_reward.symbol == core_symbol(),
+            "deprecated block reward field must use the core symbol");
+      check(initial_block_reward.amount == 0,
+            "initial block reward is fixed by protocol; compatibility field must be zero");
 
       const auto& now = eosio::current_time_point();
       if (_gstate.election_activated_time == time_point() || _gstate.election_activated_time > now ) {
@@ -533,12 +610,12 @@ namespace eosiosystem {
       if (_gstate.reward_started_time == time_point() || _gstate.reward_started_time > now ) {
          check(reward_epoch_start > now, "reward epoch start must be in the future");
          _gstate.reward_started_time = reward_epoch_start;
-         _gstate.initial_rewards_per_block = initial_block_reward;
+         // This legacy field remains serialized for live-chain compatibility;
+         // the fixed protocol schedule no longer reads a configurable reward.
+         _gstate.initial_rewards_per_block = asset(0, core_symbol());
       } else {
          check( reward_epoch_start == _gstate.reward_started_time,
             "reward epoch start cannot change after reward accounting has started");
-         check( initial_block_reward == _gstate.initial_rewards_per_block,
-            "initial block reward cannot change after reward accounting has started");
       }
    }
    #endif//ENABLE_VOTING_PRODUCER

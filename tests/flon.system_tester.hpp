@@ -898,7 +898,7 @@ public:
       return push_action(config::system_account_name, "setprodcfg"_n, mvo()
             ("schedule_start", start_time)
             ("reward_epoch_start", start_time)
-            ("initial_block_reward", core_sym::from_string("0.8000")) );
+            ("initial_block_reward", core_sym::from_string("0.0000")) );
    }
 
    action_result closeepoch( uint64_t epoch_id ) {

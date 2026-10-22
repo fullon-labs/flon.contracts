@@ -14,7 +14,10 @@ The system account initializes producer scheduling and base block-production rew
 
 - `schedule_start` is when vote-ranked producer schedules may become active.
 - `reward_epoch_start` anchors epoch zero for performance measurement and starts the base block-production reward. It must be equal to or later than `schedule_start`.
-- `initial_block_reward` is the initial FLON amount generated per produced block; the existing halving schedule applies.
-- Both timestamps must be in the future when first configured. Once their respective processes have started, the timestamps and initial block reward are immutable.
+- Base issuance is not configurable: the protocol fixes a 500,000,000 FLON mining budget and halves the scheduled era budget every 315,360,000 reward-eligible blocks. The implied first-era theoretical rate is approximately `0.7927447996 FLON` per eligible block.
+- `initial_block_reward` is deprecated and retained only for deployed ABI compatibility; it must be `0 FLON` and is ignored by reward calculation.
+
+The contract distributes each era's integer budget deterministically across its eligible blocks, including smallest-unit remainders, and enforces the 500,000,000 FLON cap on every reward accrual. Halving uses eligible rewarded-block count rather than wall-clock time, so chain downtime does not consume the mining schedule.
+- Both timestamps must be in the future when first configured and become immutable once their respective processes have started.
 
 This base block-production reward is distinct from the additional gas-funded FLON reward pool. Gas reward allocation is configured separately with `setgasrwcfg`, and eligible recipients claim accumulated rewards. The former `cfgelection` action has been removed in favor of the more explicit action and parameter names above.
