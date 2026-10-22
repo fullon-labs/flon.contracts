@@ -316,7 +316,7 @@ fucli -u "$RPC_URL" push action flon standbyproof \
 
 限制：
 
-- 账户必须位于该 epoch 的 `gasroles` Standby 快照；
+- 账户必须在该 epoch 的 `gasnodestats` 快照中标记为 Standby；
 - block 必须是 canonical，且距离当前高度不超过 240 块；
 - 同一 block id 不能重复；proof 不能过于密集；
 - 达到阈值后无需继续提交。
@@ -465,7 +465,7 @@ fucli -u "$RPC_URL" get table flon <BASE_EPOCH_ID> bpstats
 
 # GAS 配置、角色、统计和结算
 fucli -u "$RPC_URL" get table flon flon gasrewcfg
-fucli -u "$RPC_URL" get table flon <GAS_EPOCH_ID> gasroles
+fucli -u "$RPC_URL" get table flon flon gasepochcfg
 fucli -u "$RPC_URL" get table flon <GAS_EPOCH_ID> gasnodestats
 fucli -u "$RPC_URL" get table flon flon gassettles
 
