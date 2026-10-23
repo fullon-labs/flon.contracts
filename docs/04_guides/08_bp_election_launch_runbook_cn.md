@@ -14,7 +14,7 @@ title: BP 投票竞选上线与运行操作手册
 | --- | --- | --- | --- |
 | Candidate BP | 完成自有质押并注册 | 公开资料、运行同步节点、接受投票 | 未进入 Active/Standby 时无节点服务奖励 |
 | Active BP | 合格 Candidate 中按有效票权排名进入当前法定席位 | 签名和生产区块、保持可用率 | 基础挖矿奖励、GAS Active 奖励；可按公开比例分享基础奖励给 Voter |
-| Standby BP | Active BP 之后排名最高的最多 30 个合格 Candidate | 保持节点同步、定期提交在线证明、随时接替 | GAS Standby 奖励；不领取 Active BP 基础挖矿奖励 |
+| Standby BP | Active BP 之后排名最高的最多 30 个合格 Candidate | 保持完整节点同步和生产就绪，随时接替 | 按 Epoch Standby 快照获得 GAS Standby 奖励；不领取 Active BP 基础挖矿奖励 |
 | Voter | 锁定 FLON 获得不可转让用途的 GLON，并选择 BP | 动态投票、监督 BP、参与 DAO 治理 | BP 按 `reward_shared_ratio` 分享的基础挖矿奖励 |
 | Keeper | 任意账户或自动化服务 | 关闭基础奖励 epoch、分批结算 GAS epoch | 无协议保证的 Keeper 奖励 |
 | DAO / `flon` 系统权限 | 治理执行 | 设置安全参数、处理全网事故、逐步扩大 Active BP 法定数量 | 不直接领取上述奖励 |
@@ -43,7 +43,7 @@ Standby BP
 ```text
 版本冻结与审计
   -> 全部节点升级
-  -> 激活 PRODUCER_SLOT_STATS
+  -> 激活 PRODUCER_SLOT_STATS 和 GAS_FEE_TOTALS
   -> 测试链部署与端到端演练
   -> 主网创建/核对合约账户和权限
   -> 部署 voter.reward、gas.reward、flon.system
@@ -66,7 +66,7 @@ Standby BP
 - FLON Core、FLON CDT 和系统合约的 Git commit、tag、WASM/ABI SHA-256；
 - `flon.system`、`voter.reward`、`gas.reward` 的部署文件；
 - 测试链与主网 chain ID、RPC URL；
-- `PRODUCER_SLOT_STATS` feature digest 和激活状态；
+- `PRODUCER_SLOT_STATS` 和 `GAS_FEE_TOTALS` feature digest 及激活状态；
 - Active BP 初始法定数量、最低自有质押、解质押等待期、启动时间；
 - epoch 时长、Active 可用率门槛和 GAS 奖励比例；
 - 回滚边界。合约数据迁移后不得假设可以简单回滚旧 WASM。
@@ -83,10 +83,11 @@ curl -s "$RPC_URL/v1/chain/get_info"
 
 ### 3.3 验证 protocol feature
 
-所有共识节点必须运行包含 `PRODUCER_SLOT_STATS` activation handler 的版本。激活后验证：
+所有共识节点必须运行同时包含 `PRODUCER_SLOT_STATS` 和 `GAS_FEE_TOTALS` activation handler 的版本。激活后验证：
 
 - feature 位于 activated protocol features，而不是仅位于 supported 列表；
 - `get_producer_slot_stats` 已进入 intrinsic whitelist；
+- `get_gas_fee_totals` 已进入 intrinsic whitelist；
 - 测试合约能够调用 intrinsic；
 - 重启和 replay 后状态仍一致。
 
@@ -97,6 +98,9 @@ curl -s "$RPC_URL/v1/chain/get_info"
 ```bash
 fucli -u "$RPC_URL" push action flon activate \
   '["<PRODUCER_SLOT_STATS_FEATURE_DIGEST>"]' -p flon@active
+
+fucli -u "$RPC_URL" push action flon activate \
+  '["<GAS_FEE_TOTALS_FEATURE_DIGEST>"]' -p flon@active
 ```
 
 随后调用节点的 protocol-feature 查询接口，按 digest 核对其状态和激活区块。不得在仍有共识节点不支持该 feature 时提前激活；这是节点软件升级门禁，不是合约部署可以替代的步骤。
@@ -123,6 +127,8 @@ Candidate 在注册前准备：
 2. 部署或升级 `gas.reward`；
 3. 最后部署或升级 `flon.system`；
 4. 读取链上 code hash 和 ABI，与冻结发布物比对。
+
+`flon.system` 会在 WASM 加载时解析其导入的 intrinsic。如果任一必需 feature 未激活，`setcode` 会以 `unresolveable` 拒绝，旧系统合约保持不变。不得通过修改 WASM 或绕过 whitelist 来规避该门禁。
 
 新链需要初始化奖励合约；已经初始化的链不得重复执行 `init`。示例：
 
@@ -204,6 +210,24 @@ fucli -u "$RPC_URL" push action flon setgasrwcfg \
 - schedule 切换窗口安排人工值守，不与 Core 升级、网络迁移同时进行。
 
 启动后每分钟观察 proposed/active schedule、head/LIB 延迟、漏块率和 P2P。连续两个 epoch 正常后，再考虑把 Active quorum 从 3 逐步扩大到 5、7、11、15、21。每次扩大前都要确认新增 Candidate 已达到生产要求。
+
+### 5.1 2026-10-23 主网合约升级记录
+
+本次升级使用合约 commit `2cf0c11` 和 FLON CDT 0.9.0 在 xch 构建。发布物及链上验证结果：
+
+| 账户 / Feature | 交易 ID | 结果 |
+| --- | --- | --- |
+| 创建 `gas.reward` | `03354b5797b52811f16838648fce5988e7883e597351e1ec5cd8a46567e727e8` | 账户创建并预置 GAS/流动 FLON |
+| `gas.reward@active` 加入 `flon.code` | `096963c204e6f71a56746933756377f0921c96ebc326f1aeaa16969c99b63458` | 用户主动领奖所需 inline transfer 权限就绪 |
+| 升级 `voter.reward` | `e1e54b6786e3030fa3a9f27c675c0c3353a1d3188f69a3b120696f58e4f16134` | code hash `6ab1945de244ade626525b62d8fe653d0dad16241fb83eafbeae9eebc27ddd5c` |
+| 部署 `gas.reward` | `9dc44763693d51838bf28b38dbbd568361f985f59a75ff060d2f932d814904a0` | code hash `d3ebccbedbd61d498e6d8aee0495d14fd7c72729ac77d9c38881f49737ec7363` |
+| 激活 `GAS_FEE_TOTALS` | `01a7138d1d9e3c99698a2e2c36b2c88f31895f53ed8ec3f2e063ecb8d20c31d4` | feature digest `a1a2ecbfda11c2ba64879d0ebccbf61cfd63523eb69d80bed7f3133444b9bdb9`，激活区块 `14877691` |
+| 升级 `flon.system` | `42a9548816dc2f3fde8c4bf13741afee6ae5f2615eafb9d85822e7f7243a4fdf` | code hash `5413a08e3eb1a70c655bbb4d399da51e12ce7c5ce5a268823c9e51b65fcdfec7` |
+| 初始化 `gas.reward` | `96e84e1ff24166a4c495a941a4e777ceef86b9e878ae935fbb491c41453fb835` | core symbol 为 `8,FLON` |
+
+以上交易均已进入不可逆区块。升级后 ABI 中已移除 `standbyproof`，`setgasrwcfg` 为五参数接口，并已发布 `resumeprod`。
+
+**合约部署不等于竞选启用。** 本次升级后 `gasrewcfg` 仍为空，且未代替 DAO 设置 `setbpquorum`、`setbpstake`、`setprodcfg` 和 `setgasrwcfg`。这些启动参数必须在候选节点就绪、时间窗口和治理决议明确后另行提交。
 
 ## 6. Candidate BP 操作流程
 
