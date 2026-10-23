@@ -421,7 +421,9 @@ fucli -u "$RPC_URL" push action flon closeepoch '[<BASE_EPOCH_ID>]'
 
 | 项目 | 推荐值 | 说明 |
 | --- | --- | --- |
-| 状态检查频率 | 每 1 分钟；最长不超过 5 分钟 | 只读查询 `rewardepoch.next_epoch_to_close` 和链头时间，不满足关闭条件时不发交易 |
+| 常态检查频率 | 距边界超过 30 分钟时每 15 分钟 | 校准链上时间、`next_epoch_to_close` 和预测边界；不需要持续每分钟查询 |
+| 边界预热频率 | 距边界 30–10 分钟时每 5 分钟 | 提前发现 RPC、钱包或 Keeper 故障 |
+| 边界窗口频率 | 距边界不足 10 分钟，直到成功关闭前每 1 分钟 | 只在接近结算窗口或已经发生积压时使用高频检查 |
 | 正常提交窗口 | epoch 边界后 1–5 分钟 | 给新区块和 RPC 留出传播时间，然后关闭刚结束的 epoch |
 | 延迟告警 | 边界后 15 分钟仍未关闭 | 主 Keeper 告警，由备用 Keeper 复核并补单 |
 | 严重告警 | 落后 1 个完整 epoch，即超过约 6 小时 | 立即按顺序追赶，并检查 Keeper、钱包、RPC 和合约执行日志 |
@@ -473,14 +475,19 @@ fucli -u "$RPC_URL" get table flon flon rewardepoch
 推荐的 Keeper 循环是“查询—判断—提交—等待不可逆—复核”，而不是固定每 6 小时无条件发送：
 
 ```text
-每 1 分钟执行一次只读检查
-  ├─ 链未同步 / chain ID 不匹配：停止并告警
-  ├─ next_epoch_to_close 尚未结束：本轮退出
-  └─ 已结束：提交 closeepoch(next_epoch_to_close)
+根据链上时间计算下一边界
+  ├─ 距边界 > 30 分钟：每 15 分钟校准一次
+  ├─ 距边界 30–10 分钟：每 5 分钟检查一次
+  └─ 距边界 < 10 分钟或已有积压：每 1 分钟检查
+       ├─ 链未同步 / chain ID 不匹配：停止并告警
+       ├─ next_epoch_to_close 尚未结束：等待下一轮
+       └─ 已结束：提交 closeepoch(next_epoch_to_close)
        ├─ 等待不可逆
        ├─ 验证 next_epoch_to_close == 原值 + 1
        └─ 如仍有积压，串行处理下一 epoch
 ```
+
+进程启动、重启或网络恢复时应立即执行一次完整检查，然后再进入上述自适应周期。链头/LIB、节点进程和 P2P 健康监控可以独立保持较高频率，但不需要因此每分钟查询或提交 `closeepoch`。
 
 基础 `closeepoch` 与 GAS `beginsettle/settlenext/finalizeepoch` 是两套独立编号和状态机。基础 epoch 追赶完成不等于 GAS epoch 已结算，Keeper 必须分别监控，严禁混用 epoch ID。
 
