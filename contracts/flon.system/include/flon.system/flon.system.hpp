@@ -532,10 +532,12 @@ namespace eosiosystem {
       // Retains the serialized position of the removed base-share field so
       // existing on-chain singleton rows remain readable after the upgrade.
       uint16_t reserved_reward_bp = 0;
-      uint64_t first_reward_epoch = 0;
       uint32_t last_accounted_slot = 0;
       uint64_t last_metered_gas_value = 0;
       binary_extension<uint8_t> accounting_version;
+      // Added at the tail as a binary extension so rows written by the
+      // pre-reward-gating contract retain their serialized field offsets.
+      binary_extension<uint64_t> first_reward_epoch;
    };
    using gas_reward_config_singleton = eosio::singleton<"gasrewcfg"_n, gas_reward_config>;
 

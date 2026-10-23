@@ -57,7 +57,7 @@ void system_contract::setgasrwcfg(bool enabled, uint32_t epoch_slots,
       : 0;
    gas_reward_config next{enabled, epoch_slots, active_min_bp, standby_min_proofs,
                           pool_bp, active_share_bp, 0,
-                          first_reward_epoch, 0, 0, gas_accounting_version};
+                          0, 0, gas_accounting_version, first_reward_epoch};
    config.set(next, get_self());
 }
 
@@ -116,6 +116,18 @@ void system_contract::accumulate_gas_node_stats(uint32_t current_slot) {
    if (!config.enabled) return;
 
    const auto totals = eosio::get_gas_fee_totals();
+   if (!config.first_reward_epoch.has_value()) {
+      // A row written before reward gating has no tail extension.  Upgrade it
+      // in place without interpreting historical GAS or slots as rewardable.
+      config.first_reward_epoch =
+         uint64_t(current_slot) / config.epoch_slots + 1;
+      config.last_accounted_slot = current_slot;
+      config.last_metered_gas_value = totals.total_gas_value_flon;
+      config.accounting_version = gas_accounting_version;
+      config_table.set(config, get_self());
+      return;
+   }
+   const uint64_t first_reward_epoch = config.first_reward_epoch.value();
    const bool current_version = config.accounting_version.has_value() &&
                                 config.accounting_version.value() == gas_accounting_version;
    if (!current_version || config.last_accounted_slot == 0 ||
@@ -148,7 +160,7 @@ void system_contract::accumulate_gas_node_stats(uint32_t current_slot) {
    // accounted block, not to the current epoch's pending block.
    const uint64_t gas_epoch = config.last_accounted_slot / config.epoch_slots;
    const uint64_t gas_delta = totals.total_gas_value_flon - config.last_metered_gas_value;
-   if (gas_epoch >= config.first_reward_epoch) {
+   if (gas_epoch >= first_reward_epoch) {
       gas_epoch_meters meters(get_self(), get_self().value);
       auto meter = meters.find(gas_epoch);
       if (meter == meters.end()) {
@@ -163,7 +175,7 @@ void system_contract::accumulate_gas_node_stats(uint32_t current_slot) {
       const uint64_t epoch_id = from / config.epoch_slots;
       const uint64_t epoch_last = (epoch_id + 1) * uint64_t(config.epoch_slots) - 1;
       const uint32_t to = static_cast<uint32_t>(std::min<uint64_t>(current_slot, epoch_last));
-      if (epoch_id >= config.first_reward_epoch) {
+      if (epoch_id >= first_reward_epoch) {
          ensure_gas_epoch_roles(epoch_id, config);
          gas_node_stats stats(get_self(), epoch_id);
          for (const auto& item : eosio::get_producer_slot_stats(from, to)) {
@@ -191,7 +203,8 @@ void system_contract::standbyproof(name owner, uint64_t epoch_id,
    gas_reward_config_singleton config_table(get_self(), get_self().value);
    check(config_table.exists() && config_table.get().enabled, "gas rewards are disabled");
    const auto config = config_table.get();
-   check(epoch_id >= config.first_reward_epoch &&
+   check(config.first_reward_epoch.has_value(), "gas reward configuration upgrade is pending");
+   check(epoch_id >= config.first_reward_epoch.value() &&
          epoch_id == eosio::current_block_time().slot / config.epoch_slots,
          "proof must target the current epoch");
    gas_epoch_configs epoch_configs(get_self(), get_self().value);
