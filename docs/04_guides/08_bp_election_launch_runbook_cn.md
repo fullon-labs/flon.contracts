@@ -30,7 +30,7 @@ Active 和 Standby 是协议根据快照自动产生的运行状态，不是 Can
 
 Standby BP
 ├─ 无固定基础挖矿奖励
-├─ 完成在线 proof 后可领取小比例 GAS 在线服务奖励
+├─ 按 Epoch Standby 快照领取小比例 GAS 候补服务奖励
 └─ 主要价值是保持生产就绪，并在排名或 Active 资格变化时递补
 ```
 
@@ -68,7 +68,7 @@ Standby BP
 - 测试链与主网 chain ID、RPC URL；
 - `PRODUCER_SLOT_STATS` feature digest 和激活状态；
 - Active BP 初始法定数量、最低自有质押、解质押等待期、启动时间；
-- epoch 时长、可用率门槛、Standby proof 次数、GAS 奖励比例；
+- epoch 时长、Active 可用率门槛和 GAS 奖励比例；
 - 回滚边界。合约数据迁移后不得假设可以简单回滚旧 WASM。
 
 ### 3.2 升级节点软件
@@ -161,10 +161,10 @@ fucli -u "$RPC_URL" push action flon setprodcfg \
   '["<SCHEDULE_START_UTC>","<REWARD_EPOCH_START_UTC>","0.00000000 FLON"]' \
   -p flon@active
 
-# 6 小时 epoch；95% 用于 Active 健康统计/全网事故判定；Standby 每 epoch 12 次 proof；
+# 6 小时 epoch；95% 用于 Active 健康统计/全网事故判定；
 # GAS 的 10% 进入节点池，其中 Active 80%、Standby 最多 20%。
 fucli -u "$RPC_URL" push action flon setgasrwcfg \
-  '[true,43200,9500,12,1000,8000]' -p flon@active
+  '[true,43200,9500,1000,8000]' -p flon@active
 ```
 
 规则：
@@ -183,7 +183,7 @@ fucli -u "$RPC_URL" push action flon setgasrwcfg \
 1. 三个以上 Candidate 质押、注册并公开资料；
 2. 多个 Voter `addvote -> voteproducer`，验证同一账户总票权不因多选而放大；
 3. 到下一个 epoch 后，排名和 Active schedule 生效；
-4. Active BP 正常出块，Standby 按间隔提交 12 次 proof；
+4. Active BP 正常出块，确认 Standby Epoch 快照与候补排名正确；
 5. `closeepoch` 后 BP/Voter 基础奖励可领取；
 6. GAS epoch 完成 `beginsettle -> settlenext -> finalizeepoch` 后节点可领取；
 7. `subvote` 立即收回并销毁等量 GLON，等待期后退回 FLON；
@@ -304,22 +304,9 @@ fucli -u "$RPC_URL" push action flon resumeprod \
 
 ## 8. Standby BP 运行和领奖
 
-Standby 节点必须保持完整同步和可立即接替状态，但不签名生产当前 schedule 的区块。每个 GAS epoch 应均匀提交在线 proof；默认 6 小时 epoch、12 次 proof，最小间隔约 30 分钟。
+Standby 节点应保持完整同步和可立即接替状态，但不签名生产当前 schedule 的区块。原 `standbyproof` 仅能证明账户可签名并取得公共 RPC 数据，不能证明候选人运行了生产就绪的完整节点，因此已删除。
 
-先读取最新不可逆或足够新的 canonical block number/id，再提交：
-
-```bash
-fucli -u "$RPC_URL" push action flon standbyproof \
-  '["<BP_ACCOUNT>",<GAS_EPOCH_ID>,<RECENT_BLOCK_NUM>,"<RECENT_BLOCK_ID>"]' \
-  -p <BP_ACCOUNT>@active
-```
-
-限制：
-
-- 账户必须在该 epoch 的 `gasnodestats` 快照中标记为 Standby；
-- block 必须是 canonical，且距离当前高度不超过 240 块；
-- 同一 block id 不能重复；proof 不能过于密集；
-- 达到阈值后无需继续提交。
+当前版本不对 Standby 声称在线能力作虚假判断。注册有效、自质押达标、未处于 `suspended` 状态且进入候补排名的账户，才可写入该 GAS epoch 的 `gasnodestats` Standby 快照，并获得该 epoch 的 Standby 奖励资格。该资格表示候补席位身份，不构成节点在线、独立同步或可随时出块的证明。未来应以共识可验证的真实测试 slot 或等效机制替代。
 
 结算完成后领取：
 

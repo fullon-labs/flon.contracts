@@ -27,17 +27,13 @@ int64_t mul_div(int64_t value, uint64_t multiplier, uint64_t divisor,
 }
 
 void system_contract::setgasrwcfg(bool enabled, uint32_t epoch_slots,
-                                  uint16_t active_min_bp, uint16_t standby_min_proofs,
-                                  uint16_t pool_bp, uint16_t active_share_bp) {
+                                  uint16_t active_min_bp, uint16_t pool_bp,
+                                  uint16_t active_share_bp) {
    require_auth(get_self());
    check(epoch_slots >= 1'200, "epoch must contain at least 1200 slots");
    check(active_min_bp <= basis_points && pool_bp <= basis_points &&
          active_share_bp <= basis_points,
          "basis point value exceeds 10000");
-   check(standby_min_proofs > 0, "standby proof threshold must be positive");
-   check(standby_min_proofs <= epoch_slots,
-         "standby proof threshold cannot exceed the epoch slot count");
-
    gas_reward_config_singleton config(get_self(), get_self().value);
    if (config.exists()) {
       const auto old = config.get();
@@ -46,7 +42,7 @@ void system_contract::setgasrwcfg(bool enabled, uint32_t epoch_slots,
       if (old.enabled) {
          check(!enabled, "disable gas rewards before changing configuration");
          check(epoch_slots == old.epoch_slots && active_min_bp == old.active_min_bp &&
-               standby_min_proofs == old.standby_min_proofs && pool_bp == old.pool_bp &&
+               pool_bp == old.pool_bp &&
                active_share_bp == old.active_share_bp,
                "configuration cannot change while enabled");
       }
@@ -55,7 +51,7 @@ void system_contract::setgasrwcfg(bool enabled, uint32_t epoch_slots,
    const uint64_t first_reward_epoch = enabled
       ? uint64_t(eosio::current_block_time().slot) / epoch_slots + 1
       : 0;
-   gas_reward_config next{enabled, epoch_slots, active_min_bp, standby_min_proofs,
+   gas_reward_config next{enabled, epoch_slots, active_min_bp, 0,
                           pool_bp, active_share_bp, 0,
                           0, 0, gas_accounting_version, first_reward_epoch};
    config.set(next, get_self());
@@ -69,7 +65,7 @@ void system_contract::ensure_gas_epoch_roles(uint64_t epoch_id,
          row.epoch_id = epoch_id;
          row.epoch_slots = config.epoch_slots;
          row.active_min_bp = config.active_min_bp;
-         row.standby_min_proofs = config.standby_min_proofs;
+         row.reserved_standby_proofs = 0;
          row.pool_bp = config.pool_bp;
          row.active_share_bp = config.active_share_bp;
          row.reserved_reward_bp = 0;
@@ -102,6 +98,7 @@ void system_contract::ensure_gas_epoch_roles(uint64_t epoch_id,
         candidates_scanned < max_schedule_candidates_scanned;
         ++it, ++candidates_scanned) {
       if (!it->is_active || contains(active, it->owner)) continue;
+      if (!is_performance_eligible(it->owner, epoch_id)) continue;
       if (bp_stake_config && bp_stake_config->enforce_schedule &&
           !has_min_bp_self_stake(it->owner, *bp_stake_config)) continue;
       add_role(it->owner, standby_role);
@@ -197,42 +194,6 @@ void system_contract::accumulate_gas_node_stats(uint32_t current_slot) {
    config_table.set(config, get_self());
 }
 
-void system_contract::standbyproof(name owner, uint64_t epoch_id,
-                                   uint32_t head_block_num, checksum256 head_block_id) {
-   require_auth(owner);
-   gas_reward_config_singleton config_table(get_self(), get_self().value);
-   check(config_table.exists() && config_table.get().enabled, "gas rewards are disabled");
-   const auto config = config_table.get();
-   check(config.first_reward_epoch.has_value(), "gas reward configuration upgrade is pending");
-   check(epoch_id >= config.first_reward_epoch.value() &&
-         epoch_id == eosio::current_block_time().slot / config.epoch_slots,
-         "proof must target the current epoch");
-   gas_epoch_configs epoch_configs(get_self(), get_self().value);
-   const auto epoch_config = epoch_configs.get(epoch_id, "missing epoch reward configuration");
-   gas_node_stats stats(get_self(), epoch_id);
-   auto stat = stats.require_find(owner.value, "node is not in this epoch");
-   check(stat->role == standby_role, "only snapshotted standby nodes may prove");
-   const auto current = eosio::current_block_number();
-   check(head_block_num <= current && current - head_block_num <= 240, "proof block is not recent");
-   checksum256 canonical;
-   check(eosio::get_recent_block_id(head_block_num, canonical) && canonical == head_block_id,
-         "proof block id is not canonical");
-
-   const uint32_t min_spacing = std::max<uint32_t>(
-      1, epoch_config.epoch_slots / epoch_config.standby_min_proofs);
-   check(stat->standby_proofs < epoch_config.standby_min_proofs,
-         "standby proof threshold already reached");
-   check(stat->last_proof_block != head_block_id, "duplicate proof block");
-   if (stat->standby_proofs > 0) {
-      check(eosio::current_block_time().slot >= stat->last_proof_slot + min_spacing,
-            "standby proof submitted too soon");
-   }
-   stats.modify(stat, eosio::same_payer, [&](auto& row) {
-      ++row.standby_proofs; row.last_proof_slot = eosio::current_block_time().slot;
-      row.last_proof_block = head_block_id;
-   });
-}
-
 void system_contract::beginsettle(uint64_t epoch_id) {
    gas_reward_config_singleton config_table(get_self(), get_self().value);
    check(config_table.exists() && config_table.get().enabled, "gas rewards are disabled");
@@ -282,8 +243,10 @@ void system_contract::settlenext(uint64_t epoch_id, uint16_t max_rows) {
          const bool active_participated = it->role == active_role && it->produced > 0;
          const bool active_qualified_for_status = active_participated && it->expected > 0 &&
             uint64_t(it->produced) * basis_points >= uint64_t(it->expected) * config.active_min_bp;
-         const bool standby_ok = it->role == standby_role &&
-            it->standby_proofs >= config.standby_min_proofs;
+         // RPC-derived standby proofs did not demonstrate that a candidate ran
+         // a production-ready node. Until a consensus-backed readiness test is
+         // introduced, the epoch snapshot itself defines Standby eligibility.
+         const bool standby_ok = it->role == standby_role;
          const uint64_t score = active_participated ? it->produced : 0;
          stats.modify(it, eosio::same_payer, [&](auto& row) {
             row.eligible = active_participated || standby_ok; row.score = score;

@@ -526,7 +526,8 @@ namespace eosiosystem {
       bool enabled = false;
       uint32_t epoch_slots = 43'200;
       uint16_t active_min_bp = 9'500;
-      uint16_t standby_min_proofs = 12;
+      // Retains the serialized position of the removed standby-proof threshold.
+      uint16_t reserved_standby_proofs = 0;
       uint16_t pool_bp = 1'000;
       uint16_t active_share_bp = 8'000;
       // Retains the serialized position of the removed base-share field so
@@ -548,9 +549,10 @@ namespace eosiosystem {
       uint32_t produced = 0;
       uint32_t missed = 0;
       uint32_t longest_missed = 0;
-      uint16_t standby_proofs = 0;
-      uint32_t last_proof_slot = 0;
-      checksum256 last_proof_block;
+      // Retain removed standby-proof fields so existing rows remain readable.
+      uint16_t reserved_standby_proofs = 0;
+      uint32_t reserved_last_proof_slot = 0;
+      checksum256 reserved_last_proof_block;
       uint64_t score = 0;
       bool eligible = false;
       asset allocated;
@@ -562,7 +564,8 @@ namespace eosiosystem {
       uint64_t epoch_id;
       uint32_t epoch_slots;
       uint16_t active_min_bp;
-      uint16_t standby_min_proofs;
+      // Retains the serialized position of the removed standby-proof threshold.
+      uint16_t reserved_standby_proofs = 0;
       uint16_t pool_bp;
       uint16_t active_share_bp;
       // Retains the serialized position of the removed base-share field.
@@ -1142,12 +1145,7 @@ namespace eosiosystem {
 
          [[eosio::action]]
          void setgasrwcfg(bool enabled, uint32_t epoch_slots, uint16_t active_min_bp,
-                          uint16_t standby_min_proofs, uint16_t pool_bp,
-                          uint16_t active_share_bp);
-
-         [[eosio::action]]
-         void standbyproof(name owner, uint64_t epoch_id, uint32_t head_block_num,
-                           checksum256 head_block_id);
+                          uint16_t pool_bp, uint16_t active_share_bp);
 
          [[eosio::action]] void beginsettle(uint64_t epoch_id);
          [[eosio::action]] void settlenext(uint64_t epoch_id, uint16_t max_rows);
