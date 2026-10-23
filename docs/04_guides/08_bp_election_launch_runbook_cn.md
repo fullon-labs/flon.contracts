@@ -413,6 +413,77 @@ fucli -u "$RPC_URL" push action flon closeepoch '[<BASE_EPOCH_ID>]'
 - 应用下一 epoch 的票权变化；
 - 推进 `rewardepoch.next_epoch_to_close`。
 
+`closeepoch` 不由 `onblock` 自动执行。`onblock` 只记录逐块奖励和确定性出块统计；完整结算包含表扫描、绩效判定、inline transfer 和待生效票权更新，必须由链下 Keeper 发起 permissionless 交易，避免结算失败或 CPU 超限阻塞共识出块。
+
+#### 10.1.1 日常执行频率和时间窗口
+
+基础 epoch 固定为 6 小时。Keeper 不需要每块发送交易，推荐采用以下运行节奏：
+
+| 项目 | 推荐值 | 说明 |
+| --- | --- | --- |
+| 状态检查频率 | 每 1 分钟；最长不超过 5 分钟 | 只读查询 `rewardepoch.next_epoch_to_close` 和链头时间，不满足关闭条件时不发交易 |
+| 正常提交窗口 | epoch 边界后 1–5 分钟 | 给新区块和 RPC 留出传播时间，然后关闭刚结束的 epoch |
+| 延迟告警 | 边界后 15 分钟仍未关闭 | 主 Keeper 告警，由备用 Keeper 复核并补单 |
+| 严重告警 | 落后 1 个完整 epoch，即超过约 6 小时 | 立即按顺序追赶，并检查 Keeper、钱包、RPC 和合约执行日志 |
+| 高可用配置 | 1 个主 Keeper，加至少 2 个独立监控/备用 Keeper | 备用 Keeper 必须先读链上状态，不能按本地定时器盲发 |
+
+每轮执行前都必须读取：
+
+```bash
+fucli -u "$RPC_URL" get info
+fucli -u "$RPC_URL" get table flon flon rewardepoch
+```
+
+只有同时满足以下条件才提交：
+
+1. RPC chain ID 与目标网络配置完全一致；
+2. 链头和 LIB 正常推进；
+3. `next_epoch_to_close` 对应的 epoch 已结束；
+4. Keeper 钱包和签名权限属于目标网络；
+5. 当前没有另一笔相同 epoch 的待确认交易。
+
+提交后至少等待交易进入不可逆区块，并重新读取 `rewardepoch`。只有观察到 `next_epoch_to_close` 增加 1，才能认为本次关闭完成。交易广播成功或 RPC 返回 HTTP 200 都不能单独作为完成依据。
+
+#### 10.1.2 错过一次或多次的处理
+
+错过关闭窗口不会销毁基础挖矿奖励或 Voter 分享奖励。各 epoch 的奖励数据仍保留在独立 scope 中，之后可以补做；但延迟期间会产生以下影响：
+
+- BP 和 Voter 的奖励所有权尚未最终结算，暂时不能领取对应部分；
+- `pendingvote` / `votedeltas` 尚未激活，新的票权排名和 Active schedule 会延迟；
+- BP 绩效状态、停权和恢复判定延迟；
+- 未关闭 epoch 的表数据继续占用链上 RAM；
+- 监控和 DApp 展示的“待生效”状态会持续存在。
+
+如果只错过一次，直接读取 `rewardepoch.next_epoch_to_close`，确认该 epoch 已结束后提交一次 `closeepoch` 即可。
+
+如果错过多次，不能跳到最新 epoch，也不能并发提交多个 `closeepoch`。合约要求严格顺序关闭，安全追赶流程是：
+
+1. 读取链上的 `next_epoch_to_close`，把它作为唯一可信的下一个 epoch ID；
+2. 提交 `closeepoch(next_epoch_to_close)`；
+3. 等待不可逆，并确认链上值恰好增加 1；
+4. 重新读取状态；如果新的 `next_epoch_to_close` 也已经结束，继续下一轮；
+5. 追到当前尚未结束的 epoch 后停止。
+
+不要预先生成一串交易，也不要依赖本地缓存的 epoch ID。两名 Keeper 同时补单时，后到交易通常会因 `reward epochs must be closed sequentially` 被拒绝；这是安全拒绝，但会浪费交易资源并制造无效告警。
+
+长时间积压通常不会把多个 epoch 合并成一笔超大结算：每次 action 仍只处理一个 epoch。因此可以顺序追赶，奖励不会因为跨过多个 6 小时窗口而丢失。不过，每个 epoch 本身仍可能包含较多 BP 绩效和奖励行；若单笔交易出现 CPU/NET 超限，必须保留精确错误和表状态，停止盲目重试，并评估是否需要通过合约升级把结算改为有界、可续跑的分批状态机。
+
+#### 10.1.3 Keeper 自动化逻辑
+
+推荐的 Keeper 循环是“查询—判断—提交—等待不可逆—复核”，而不是固定每 6 小时无条件发送：
+
+```text
+每 1 分钟执行一次只读检查
+  ├─ 链未同步 / chain ID 不匹配：停止并告警
+  ├─ next_epoch_to_close 尚未结束：本轮退出
+  └─ 已结束：提交 closeepoch(next_epoch_to_close)
+       ├─ 等待不可逆
+       ├─ 验证 next_epoch_to_close == 原值 + 1
+       └─ 如仍有积压，串行处理下一 epoch
+```
+
+基础 `closeepoch` 与 GAS `beginsettle/settlenext/finalizeepoch` 是两套独立编号和状态机。基础 epoch 追赶完成不等于 GAS epoch 已结算，Keeper 必须分别监控，严禁混用 epoch ID。
+
 ### 10.2 GAS 节点奖励
 
 GAS epoch 使用绝对 block slot 除以 `epoch_slots` 的编号方式，与基础 epoch 编号不要混用。
