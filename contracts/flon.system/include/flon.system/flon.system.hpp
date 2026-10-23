@@ -356,6 +356,34 @@ namespace eosiosystem {
 
    typedef eosio::multi_index< "voters"_n, voter_info >  voters_table;
 
+   struct vote_allocation {
+      name    producer;
+      int64_t votes = 0;
+
+      bool operator==(const vote_allocation& other) const {
+         return producer == other.producer && votes == other.votes;
+      }
+
+      EOSLIB_SERIALIZE(vote_allocation, (producer)(votes))
+   };
+
+   struct [[eosio::table("voteallocs"), eosio::contract("flon.system")]] voter_allocations {
+      name                         voter;
+      std::vector<vote_allocation> allocations;
+
+      uint64_t primary_key() const { return voter.value; }
+   };
+   typedef eosio::multi_index<"voteallocs"_n, voter_allocations> voter_allocations_table;
+
+   struct [[eosio::table("pendallocs"), eosio::contract("flon.system")]] pending_voter_allocations {
+      name                         voter;
+      std::vector<vote_allocation> allocations;
+      uint64_t                     activation_epoch = 0;
+
+      uint64_t primary_key() const { return voter.value; }
+   };
+   typedef eosio::multi_index<"pendallocs"_n, pending_voter_allocations> pending_voter_allocations_table;
+
    typedef eosio::multi_index< "producers"_n, producer_info,
                                indexed_by<"prototalvote"_n, const_mem_fun<producer_info, uint64_t, &producer_info::by_votes>  >
                              > producers_table;
@@ -945,6 +973,10 @@ namespace eosiosystem {
          [[eosio::action]]
          void voteproducer( const name& voter, const std::vector<name>& producers );
 
+         /** Assign an explicit, conserved FLON vote amount to each producer. */
+         [[eosio::action]]
+         void votealloc( const name& voter, const std::vector<vote_allocation>& allocations );
+
          /**
           * Vote producer action, new version, votes for a set of producers. This action updates the list of `producers` voted for,
           * for `voter` account. Voter can vote for a list of at most 30 producers.
@@ -1167,6 +1199,7 @@ namespace eosiosystem {
          using unstakebp_action = eosio::action_wrapper<"unstakebp"_n, &system_contract::unstakebp>;
          using claimbpstake_action = eosio::action_wrapper<"claimbpstake"_n, &system_contract::claimbpstake>;
          using voteproducer_action = eosio::action_wrapper<"voteproducer"_n, &system_contract::voteproducer>;
+         using votealloc_action = eosio::action_wrapper<"votealloc"_n, &system_contract::votealloc>;
          // using voteupdate_action = eosio::action_wrapper<"voteupdate"_n, &system_contract::voteupdate>;
          using claimrewards_action = eosio::action_wrapper<"claimrewards"_n, &system_contract::claimrewards>;
          using setprodcfg_action = eosio::action_wrapper<"setprodcfg"_n, &system_contract::setprodcfg>;
@@ -1227,6 +1260,14 @@ namespace eosiosystem {
                                  const std::vector<name>& producers, uint64_t activation_epoch );
          void update_pending_vote_deltas( const std::vector<name>& old_producers, int64_t old_votes,
                                           const std::vector<name>& new_producers, int64_t new_votes );
+         std::vector<vote_allocation> equal_vote_allocations(const std::vector<name>& producers,
+                                                              int64_t votes) const;
+         std::vector<vote_allocation> target_vote_allocations(const name& voter,
+                                                               const std::vector<name>& producers,
+                                                               int64_t votes,
+                                                               bool pending) const;
+         void update_pending_allocation_deltas(const std::vector<vote_allocation>& old_allocations,
+                                                const std::vector<vote_allocation>& new_allocations);
          uint64_t current_reward_epoch( const time_point& now ) const;
          uint64_t reward_epoch_for_slot( uint32_t slot ) const;
          void record_producer_slot_stats( const block_timestamp& timestamp );

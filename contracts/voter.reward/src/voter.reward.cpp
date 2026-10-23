@@ -133,6 +133,98 @@ void voter_reward::voteproducer( const name& voter, const std::vector<name>& pro
    queue_vote_change(voter, target_votes, producers, activation_epoch);
 }
 
+std::vector<voter_reward::vote_allocation> voter_reward::equal_allocations(
+      const std::vector<name>& producers, int64_t votes) const {
+   std::vector<vote_allocation> result;
+   if (producers.empty()) return result;
+   const int64_t weight = votes / static_cast<int64_t>(producers.size());
+   result.reserve(producers.size());
+   for (const auto& producer : producers) result.push_back({producer, weight});
+   return result;
+}
+
+std::vector<voter_reward::vote_allocation> voter_reward::target_allocations(
+      const name& voter, const std::vector<name>& producers, int64_t votes,
+      bool pending) const {
+   if (pending) {
+      auto itr = _pending_allocations_tbl.find(voter.value);
+      if (itr != _pending_allocations_tbl.end()) return itr->allocations;
+   } else {
+      auto itr = _voter_allocations_tbl.find(voter.value);
+      if (itr != _voter_allocations_tbl.end()) return itr->allocations;
+   }
+   return equal_allocations(producers, votes);
+}
+
+int64_t voter_reward::allocation_weight(
+      const std::vector<vote_allocation>& allocations, const name& producer) const {
+   auto itr = std::lower_bound(allocations.begin(), allocations.end(), producer,
+      [](const vote_allocation& item, const name& value) { return item.producer < value; });
+   return itr != allocations.end() && itr->producer == producer ? itr->votes : 0;
+}
+
+void voter_reward::votealloc(const name& voter,
+                             const std::vector<vote_allocation>& allocations,
+                             uint64_t activation_epoch) {
+   check_init();
+   require_auth(SYSTEM_CONTRACT);
+   require_auth(voter);
+   int64_t total = 0;
+   std::vector<name> producers;
+   producers.reserve(allocations.size());
+   for (size_t i = 0; i < allocations.size(); ++i) {
+      CHECK(allocations[i].votes > 0, "producer vote allocation must be positive")
+      if (i > 0) CHECK(allocations[i - 1].producer < allocations[i].producer,
+                       "producer vote allocations must be unique and sorted")
+      CHECK(total <= std::numeric_limits<int64_t>::max() - allocations[i].votes,
+            "producer vote allocation overflow")
+      total += allocations[i].votes;
+      producers.push_back(allocations[i].producer);
+   }
+
+   materialize_pending(voter);
+   auto voter_itr = _voter_tbl.find(voter.value);
+   CHECK(voter_itr != _voter_tbl.end(), "voter info not found")
+   auto pending_itr = _pending_vote_tbl.find(voter.value);
+   const bool has_pending = pending_itr != _pending_vote_tbl.end();
+   const int64_t target_votes = has_pending ? pending_itr->votes : voter_itr->votes;
+   CHECK(total == target_votes,
+         "sum of producer vote allocations must equal voter locked FLON")
+   std::vector<name> old_producers;
+   if (has_pending) old_producers = pending_itr->producers;
+   else for (const auto& item : voter_itr->producers) old_producers.push_back(item.first);
+   const auto old_allocations = target_allocations(voter, old_producers, target_votes,
+                                                   has_pending);
+   update_pending_totals(old_allocations, allocations);
+
+   if (pending_itr == _pending_vote_tbl.end()) {
+      _pending_vote_tbl.emplace(voter, [&](auto& row) {
+         row.owner = voter;
+         row.votes = target_votes;
+         row.producers = producers;
+         row.activation_epoch = activation_epoch;
+      });
+   } else {
+      _pending_vote_tbl.modify(pending_itr, voter, [&](auto& row) {
+         row.producers = producers;
+         row.activation_epoch = activation_epoch;
+      });
+   }
+   auto allocation_itr = _pending_allocations_tbl.find(voter.value);
+   if (allocation_itr == _pending_allocations_tbl.end()) {
+      _pending_allocations_tbl.emplace(voter, [&](auto& row) {
+         row.owner = voter;
+         row.allocations = allocations;
+         row.activation_epoch = activation_epoch;
+      });
+   } else {
+      _pending_allocations_tbl.modify(allocation_itr, voter, [&](auto& row) {
+         row.allocations = allocations;
+         row.activation_epoch = activation_epoch;
+      });
+   }
+}
+
 void voter_reward::claimrewards(const name& voter) {
    check_init();
    require_auth( voter );
@@ -175,7 +267,11 @@ void voter_reward::claim_rewards( const name& voter ) {
    _voter_tbl.modify(voter_itr, voter, [&]( auto& v) {
       if (voter_itr->votes > 0) {
          const int64_t allocated_weight = v.producers.empty() ? 0 : v.votes / static_cast<int64_t>(v.producers.size());
-         allocate_producer_rewards(v.producers, allocated_weight, 0, voter, v.unclaimed_rewards);
+         std::vector<name> producer_names;
+         for (const auto& item : v.producers) producer_names.push_back(item.first);
+         const auto exact_weights = target_allocations(voter, producer_names, v.votes, false);
+         allocate_producer_rewards(v.producers, allocated_weight, 0, voter,
+                                   v.unclaimed_rewards, &exact_weights);
       }
       check(v.unclaimed_rewards.amount > 0, "no rewards to claim");
 
@@ -237,6 +333,10 @@ void voter_reward::materialize_pending(const name& voter) {
    CHECK(voter_itr != _voter_tbl.end(), "voter info not found")
    epoch_index::table checkpoint(get_self(), pending_itr->activation_epoch);
 
+   std::vector<name> current_producers;
+   for (const auto& item : voter_itr->producers) current_producers.push_back(item.first);
+   const auto old_allocations = target_allocations(voter, current_producers,
+                                                   voter_itr->votes, false);
    _voter_tbl.modify(voter_itr, same_payer, [&](auto& v) {
       const int64_t old_weight = v.producers.empty()
                                    ? 0 : v.votes / static_cast<int64_t>(v.producers.size());
@@ -247,8 +347,10 @@ void voter_reward::materialize_pending(const name& voter) {
                "invalid reward epoch checkpoint")
          const int128_t delta = checkpoint_itr->rewards_per_vote -
                                 old_position.second.last_rewards_per_vote;
-         if (old_weight > 0 && delta > 0) {
-            auto reward = calc_voter_rewards(old_weight, delta);
+         const int64_t position_weight = allocation_weight(old_allocations,
+                                                           old_position.first);
+         if (position_weight > 0 && delta > 0) {
+            auto reward = calc_voter_rewards(position_weight, delta);
             auto prod_itr = _producer_tbl.find(old_position.first.value);
             CHECK(prod_itr != _producer_tbl.end(), "producer not found")
             _producer_tbl.modify(prod_itr, same_payer, [&](auto& p) {
@@ -269,6 +371,23 @@ void voter_reward::materialize_pending(const name& voter) {
       }
       v.update_at = current_time_point();
    });
+   auto pending_allocation_itr = _pending_allocations_tbl.find(voter.value);
+   auto active_allocation_itr = _voter_allocations_tbl.find(voter.value);
+   if (pending_allocation_itr != _pending_allocations_tbl.end()) {
+      if (active_allocation_itr == _voter_allocations_tbl.end()) {
+         _voter_allocations_tbl.emplace(voter, [&](auto& row) {
+            row.owner = voter;
+            row.allocations = pending_allocation_itr->allocations;
+         });
+      } else {
+         _voter_allocations_tbl.modify(active_allocation_itr, same_payer, [&](auto& row) {
+            row.allocations = pending_allocation_itr->allocations;
+         });
+      }
+      _pending_allocations_tbl.erase(pending_allocation_itr);
+   } else if (active_allocation_itr != _voter_allocations_tbl.end()) {
+      _voter_allocations_tbl.erase(active_allocation_itr);
+   }
    _pending_vote_tbl.erase(pending_itr);
 }
 
@@ -297,6 +416,45 @@ void voter_reward::update_pending_totals(const std::vector<name>& old_producers,
          delta = new_weight - old_weight;
       }
 
+      auto prod_itr = _producer_tbl.find(producer.value);
+      CHECK(prod_itr != _producer_tbl.end(), "producer not found")
+      auto delta_itr = _producer_delta_tbl.find(producer.value);
+      if (delta_itr == _producer_delta_tbl.end()) {
+         _producer_delta_tbl.emplace(get_self(), [&](auto& row) {
+            row.producer = producer;
+            row.votes_delta = delta;
+         });
+      } else {
+         _producer_delta_tbl.modify(delta_itr, same_payer, [&](auto& row) {
+            row.votes_delta += delta;
+         });
+      }
+   }
+}
+
+void voter_reward::update_pending_totals(
+      const std::vector<vote_allocation>& old_allocations,
+      const std::vector<vote_allocation>& new_allocations) {
+   auto old_itr = old_allocations.begin();
+   auto new_itr = new_allocations.begin();
+   while (old_itr != old_allocations.end() || new_itr != new_allocations.end()) {
+      name producer;
+      int64_t delta = 0;
+      if (new_itr == new_allocations.end() ||
+          (old_itr != old_allocations.end() && old_itr->producer < new_itr->producer)) {
+         producer = old_itr->producer;
+         delta = -old_itr->votes;
+         ++old_itr;
+      } else if (old_itr == old_allocations.end() || new_itr->producer < old_itr->producer) {
+         producer = new_itr->producer;
+         delta = new_itr->votes;
+         ++new_itr;
+      } else {
+         producer = old_itr->producer;
+         delta = new_itr->votes - old_itr->votes;
+         ++old_itr;
+         ++new_itr;
+      }
       auto prod_itr = _producer_tbl.find(producer.value);
       CHECK(prod_itr != _producer_tbl.end(), "producer not found")
       auto delta_itr = _producer_delta_tbl.find(producer.value);
@@ -350,6 +508,7 @@ void voter_reward::queue_vote_change(const name& voter, int64_t votes,
 
    std::vector<name> old_producers;
    int64_t old_votes = 0;
+   const bool had_pending = pending_itr != _pending_vote_tbl.end();
    if (pending_itr != _pending_vote_tbl.end()) {
       old_producers = pending_itr->producers;
       old_votes = pending_itr->votes;
@@ -357,7 +516,14 @@ void voter_reward::queue_vote_change(const name& voter, int64_t votes,
       old_votes = voter_itr->votes;
       for (const auto& item : voter_itr->producers) old_producers.push_back(item.first);
    }
-   update_pending_totals(old_producers, old_votes, producers, votes);
+   const auto old_allocations = target_allocations(voter, old_producers, old_votes,
+                                                   had_pending);
+   const auto new_allocations = equal_allocations(producers, votes);
+   update_pending_totals(old_allocations, new_allocations);
+   auto pending_allocation_itr = _pending_allocations_tbl.find(voter.value);
+   if (pending_allocation_itr != _pending_allocations_tbl.end()) {
+      _pending_allocations_tbl.erase(pending_allocation_itr);
+   }
 
    if (pending_itr == _pending_vote_tbl.end()) {
       _pending_vote_tbl.emplace(voter, [&](auto& row) {
@@ -409,12 +575,16 @@ void voter_reward::change_vote(const name& voter, int64_t votes, bool is_adding,
 }
 
 void voter_reward::allocate_producer_rewards(voted_producer_map& producers, int64_t weight_old,
-                                                                                    int64_t weight_delta, const name& new_payer, asset &allocated_rewards_out)
+                                                                                    int64_t weight_delta, const name& new_payer, asset &allocated_rewards_out,
+                                                                                    const std::vector<vote_allocation>* exact_weights)
 {
 
    auto now = eosio::current_time_point();
    for ( auto& voted_prod : producers) {
       const auto& prod_name = voted_prod.first;
+      const int64_t producer_weight = exact_weights
+                                        ? allocation_weight(*exact_weights, prod_name)
+                                        : weight_old;
       auto& last_rewards_per_vote = voted_prod.second.last_rewards_per_vote; // will be updated below
       auto prod_itr = _producer_tbl.find(prod_name.value);
       db::set(_producer_tbl, prod_itr, new_payer, same_payer, [&]( auto& p, bool is_new ) {
@@ -427,9 +597,9 @@ void voter_reward::allocate_producer_rewards(voted_producer_map& producers, int6
 
          CHECK(p.rewards_per_vote >= last_rewards_per_vote, "last_rewards_per_vote invalid");
          int128_t rewards_per_vote_delta = p.rewards_per_vote - last_rewards_per_vote;
-         if (rewards_per_vote_delta > 0 && weight_old > 0) {
-            ASSERT(weight_old <= p.votes)
-            asset new_rewards = calc_voter_rewards(weight_old, rewards_per_vote_delta);
+         if (rewards_per_vote_delta > 0 && producer_weight > 0) {
+            ASSERT(producer_weight <= p.votes)
+            asset new_rewards = calc_voter_rewards(producer_weight, rewards_per_vote_delta);
             CHECK(p.allocating_rewards >= new_rewards, "producer allocating rewards insufficient");
             p.allocating_rewards -= new_rewards;
             p.allocated_rewards += new_rewards;

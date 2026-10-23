@@ -99,6 +99,20 @@ namespace flon {
          void voteproducer( const name& voter, const std::vector<name>& producers,
                             uint64_t activation_epoch );
 
+         struct vote_allocation {
+            name    producer;
+            int64_t votes = 0;
+
+            bool operator==(const vote_allocation& other) const {
+               return producer == other.producer && votes == other.votes;
+            }
+            EOSLIB_SERIALIZE(vote_allocation, (producer)(votes))
+         };
+
+         [[eosio::action]]
+         void votealloc(const name& voter, const std::vector<vote_allocation>& allocations,
+                        uint64_t activation_epoch);
+
          /**
           * Legacy self-claim entrypoint. Third-party claims are not allowed.
           *
@@ -141,6 +155,7 @@ namespace flon {
          using addvote_action = eosio::action_wrapper<"addvote"_n, &voter_reward::addvote>;
          using subvote_action = eosio::action_wrapper<"subvote"_n, &voter_reward::subvote>;
          using voteproducer_action = eosio::action_wrapper<"voteproducer"_n, &voter_reward::voteproducer>;
+         using votealloc_action = eosio::action_wrapper<"votealloc"_n, &voter_reward::votealloc>;
          using claimrewards_action = eosio::action_wrapper<"claimrewards"_n, &voter_reward::claimrewards>;
          using closeepoch_action = eosio::action_wrapper<"closeepoch"_n, &voter_reward::closeepoch>;
          using claimfor_action = eosio::action_wrapper<"claimfor"_n, &voter_reward::claimfor>;
@@ -209,6 +224,21 @@ namespace flon {
             typedef eosio::multi_index<"pendingvote"_n, pending_vote> table;
          };
 
+         struct [[eosio::table("voteallocs")]] voter_allocations {
+            name                         owner;
+            std::vector<vote_allocation> allocations;
+            uint64_t primary_key() const { return owner.value; }
+            typedef eosio::multi_index<"voteallocs"_n, voter_allocations> table;
+         };
+
+         struct [[eosio::table("pendallocs")]] pending_allocations {
+            name                         owner;
+            std::vector<vote_allocation> allocations;
+            uint64_t                     activation_epoch = 0;
+            uint64_t primary_key() const { return owner.value; }
+            typedef eosio::multi_index<"pendallocs"_n, pending_allocations> table;
+         };
+
          struct [[eosio::table]] epoch_index {
             name     producer;
             int128_t rewards_per_vote = 0;
@@ -241,16 +271,28 @@ namespace flon {
       voter::table            _voter_tbl;
       producer::table         _producer_tbl;
       pending_vote::table     _pending_vote_tbl{get_self(), get_self().value};
+      voter_allocations::table _voter_allocations_tbl{get_self(), get_self().value};
+      pending_allocations::table _pending_allocations_tbl{get_self(), get_self().value};
       producer_delta::table   _producer_delta_tbl{get_self(), get_self().value};
 
       void claim_rewards( const name& voter );
-      void allocate_producer_rewards(voted_producer_map& producers, int64_t weight_old, int64_t weight_delta, const name& new_payer, asset &allocated_rewards_out);
+      void allocate_producer_rewards(voted_producer_map& producers, int64_t weight_old, int64_t weight_delta, const name& new_payer, asset &allocated_rewards_out,
+                                     const std::vector<vote_allocation>* exact_weights = nullptr);
       void change_vote(const name& voter, int64_t votes, bool is_adding, uint64_t activation_epoch);
       void materialize_pending(const name& voter);
       void queue_vote_change(const name& voter, int64_t votes,
                              const std::vector<name>& producers, uint64_t activation_epoch);
       void update_pending_totals(const std::vector<name>& old_producers, int64_t old_votes,
                                  const std::vector<name>& new_producers, int64_t new_votes);
+      std::vector<vote_allocation> equal_allocations(const std::vector<name>& producers,
+                                                     int64_t votes) const;
+      std::vector<vote_allocation> target_allocations(const name& voter,
+                                                      const std::vector<name>& producers,
+                                                      int64_t votes, bool pending) const;
+      void update_pending_totals(const std::vector<vote_allocation>& old_allocations,
+                                 const std::vector<vote_allocation>& new_allocations);
+      int64_t allocation_weight(const std::vector<vote_allocation>& allocations,
+                                const name& producer) const;
       void check_init() const;
       const symbol& core_symbol() const;
       asset calc_voter_rewards(int64_t votes, const int128_t& rewards_per_vote) const;

@@ -361,6 +361,67 @@ namespace eosiosystem {
    //    return double(staked) * std::pow( 2, weight );
    // }
 
+   std::vector<vote_allocation> system_contract::equal_vote_allocations(
+         const std::vector<name>& producers, int64_t votes) const {
+      std::vector<vote_allocation> result;
+      if (producers.empty()) return result;
+      const int64_t weight = votes / static_cast<int64_t>(producers.size());
+      result.reserve(producers.size());
+      for (const auto& producer : producers) result.push_back({producer, weight});
+      return result;
+   }
+
+   std::vector<vote_allocation> system_contract::target_vote_allocations(
+         const name& voter, const std::vector<name>& producers, int64_t votes,
+         bool pending) const {
+      if (pending) {
+         pending_voter_allocations_table table(get_self(), get_self().value);
+         auto itr = table.find(voter.value);
+         if (itr != table.end()) return itr->allocations;
+      } else {
+         voter_allocations_table table(get_self(), get_self().value);
+         auto itr = table.find(voter.value);
+         if (itr != table.end()) return itr->allocations;
+      }
+      return equal_vote_allocations(producers, votes);
+   }
+
+   void system_contract::update_pending_allocation_deltas(
+         const std::vector<vote_allocation>& old_allocations,
+         const std::vector<vote_allocation>& new_allocations) {
+      pending_vote_deltas_table deltas(get_self(), get_self().value);
+      auto old_itr = old_allocations.begin();
+      auto new_itr = new_allocations.begin();
+      while (old_itr != old_allocations.end() || new_itr != new_allocations.end()) {
+         name producer;
+         int64_t delta = 0;
+         if (new_itr == new_allocations.end() ||
+             (old_itr != old_allocations.end() && old_itr->producer < new_itr->producer)) {
+            producer = old_itr->producer;
+            delta = -old_itr->votes;
+            ++old_itr;
+         } else if (old_itr == old_allocations.end() || new_itr->producer < old_itr->producer) {
+            producer = new_itr->producer;
+            delta = new_itr->votes;
+            ++new_itr;
+         } else {
+            producer = old_itr->producer;
+            delta = new_itr->votes - old_itr->votes;
+            ++old_itr;
+            ++new_itr;
+         }
+         auto delta_itr = deltas.find(producer.value);
+         if (delta_itr == deltas.end()) {
+            deltas.emplace(get_self(), [&](auto& row) {
+               row.producer = producer;
+               row.votes_delta = delta;
+            });
+         } else {
+            deltas.modify(delta_itr, same_payer, [&](auto& row) { row.votes_delta += delta; });
+         }
+      }
+   }
+
    void system_contract::voteproducer( const name& voter_name, const std::vector<name>& producers ) {
 
       require_auth(voter_name);
@@ -393,6 +454,90 @@ namespace eosiosystem {
       voteproducer_act.send( voter_name, producers, activation_epoch );
 
       _voters.modify( voter_itr, same_payer, [&]( auto& v ) { v.last_unvoted_time = now; });
+   }
+
+   void system_contract::votealloc(const name& voter_name,
+                                   const std::vector<vote_allocation>& allocations) {
+      require_auth(voter_name);
+      check(allocations.size() <= max_vote_producer_count,
+            "attempt to vote for too many producers");
+
+      int64_t allocated = 0;
+      std::vector<name> producers;
+      producers.reserve(allocations.size());
+      for (size_t i = 0; i < allocations.size(); ++i) {
+         const auto& allocation = allocations[i];
+         check(allocation.votes > 0, "producer vote allocation must be positive");
+         if (i > 0) check(allocations[i - 1].producer < allocation.producer,
+                          "producer vote allocations must be unique and sorted");
+         check(allocated <= std::numeric_limits<int64_t>::max() - allocation.votes,
+               "producer vote allocation overflow");
+         allocated += allocation.votes;
+         producers.push_back(allocation.producer);
+         auto producer_itr = _producers.find(allocation.producer.value);
+         check(producer_itr != _producers.end(),
+               "producer " + allocation.producer.to_string() + " is not registered");
+         check(producer_itr->active(),
+               "producer " + allocation.producer.to_string() + " is not active");
+      }
+
+      materialize_pending_vote(voter_name);
+      auto voter_itr = _voters.find(voter_name.value);
+      check(voter_itr != _voters.end(), "voter not found");
+      pending_voters_table pending_votes(get_self(), get_self().value);
+      auto pending_itr = pending_votes.find(voter_name.value);
+      const bool has_pending = pending_itr != pending_votes.end();
+      const int64_t target_votes = has_pending ? pending_itr->votes : voter_itr->votes;
+      check(allocated == target_votes,
+            "sum of producer vote allocations must equal voter locked FLON");
+
+      const auto old_allocations = target_vote_allocations(
+         voter_name, has_pending ? pending_itr->producers : voter_itr->producers,
+         target_votes, has_pending);
+      check(old_allocations != allocations, "producer vote allocations did not change");
+      const uint64_t activation_epoch = next_vote_epoch(_gstate);
+      update_pending_allocation_deltas(old_allocations, allocations);
+
+      if (pending_itr == pending_votes.end()) {
+         pending_votes.emplace(voter_name, [&](auto& row) {
+            row.voter = voter_name;
+            row.votes = target_votes;
+            row.producers = producers;
+            row.activation_epoch = activation_epoch;
+         });
+      } else {
+         pending_votes.modify(pending_itr, voter_name, [&](auto& row) {
+            row.producers = producers;
+            row.activation_epoch = activation_epoch;
+         });
+      }
+      pending_voter_allocations_table pending_allocations(get_self(), get_self().value);
+      auto allocation_itr = pending_allocations.find(voter_name.value);
+      if (allocation_itr == pending_allocations.end()) {
+         pending_allocations.emplace(voter_name, [&](auto& row) {
+            row.voter = voter_name;
+            row.allocations = allocations;
+            row.activation_epoch = activation_epoch;
+         });
+      } else {
+         pending_allocations.modify(allocation_itr, voter_name, [&](auto& row) {
+            row.allocations = allocations;
+            row.activation_epoch = activation_epoch;
+         });
+      }
+
+      flon::voter_reward::votealloc_action votealloc_act{
+         voter_reward_account, {{get_self(), active_permission}, {voter_name, active_permission}}
+      };
+      std::vector<flon::voter_reward::vote_allocation> reward_allocations;
+      reward_allocations.reserve(allocations.size());
+      for (const auto& allocation : allocations) {
+         reward_allocations.push_back({allocation.producer, allocation.votes});
+      }
+      votealloc_act.send(voter_name, reward_allocations, activation_epoch);
+      _voters.modify(voter_itr, same_payer, [&](auto& row) {
+         row.last_unvoted_time = current_time_point();
+      });
    }
 
    void system_contract::update_vote_allocations( const std::vector<name>& old_producers, int64_t old_votes,
@@ -458,6 +603,25 @@ namespace eosiosystem {
          row.votes = pending_itr->votes;
          row.producers = pending_itr->producers;
       });
+      pending_voter_allocations_table pending_allocations(get_self(), get_self().value);
+      voter_allocations_table active_allocations(get_self(), get_self().value);
+      auto pending_allocation_itr = pending_allocations.find(voter.value);
+      auto active_allocation_itr = active_allocations.find(voter.value);
+      if (pending_allocation_itr != pending_allocations.end()) {
+         if (active_allocation_itr == active_allocations.end()) {
+            active_allocations.emplace(voter, [&](auto& row) {
+               row.voter = voter;
+               row.allocations = pending_allocation_itr->allocations;
+            });
+         } else {
+            active_allocations.modify(active_allocation_itr, same_payer, [&](auto& row) {
+               row.allocations = pending_allocation_itr->allocations;
+            });
+         }
+         pending_allocations.erase(pending_allocation_itr);
+      } else if (active_allocation_itr != active_allocations.end()) {
+         active_allocations.erase(active_allocation_itr);
+      }
       pending_votes.erase(pending_itr);
    }
 
@@ -521,6 +685,7 @@ namespace eosiosystem {
 
       std::vector<name> old_producers;
       int64_t old_votes = 0;
+      bool had_pending = pending_itr != pending_votes.end();
       if (pending_itr == pending_votes.end()) {
          old_producers = voter_itr->producers;
          old_votes = voter_itr->votes;
@@ -528,7 +693,16 @@ namespace eosiosystem {
          old_producers = pending_itr->producers;
          old_votes = pending_itr->votes;
       }
-      update_pending_vote_deltas(old_producers, old_votes, producers, votes);
+      const auto old_allocations = target_vote_allocations(voter, old_producers, old_votes,
+                                                            had_pending);
+      const auto new_allocations = equal_vote_allocations(producers, votes);
+      update_pending_allocation_deltas(old_allocations, new_allocations);
+
+      pending_voter_allocations_table pending_allocations(get_self(), get_self().value);
+      auto pending_allocation_itr = pending_allocations.find(voter.value);
+      if (pending_allocation_itr != pending_allocations.end()) {
+         pending_allocations.erase(pending_allocation_itr);
+      }
 
       if (pending_itr == pending_votes.end()) {
          pending_votes.emplace(voter, [&](auto& row) {
