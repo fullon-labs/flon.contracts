@@ -164,6 +164,9 @@ namespace eosiosystem {
                row.missed_blocks += sample.missed;
                row.idle_skipped_blocks =
                   row.idle_skipped_blocks.value_or(0) + sample.idle_skipped;
+               if (sample.expected == 0) {
+                  return;
+               }
                row.longest_missed_streak = std::max(
                   row.longest_missed_streak,
                   std::max<uint64_t>(sample.longest_missed_streak, joined_streak));
@@ -269,6 +272,9 @@ namespace eosiosystem {
          return;
       }
 
+      check(from_slot > 0, "producer slot accounting cursor underflow");
+      const uint32_t previous_produced_slot = static_cast<uint32_t>(from_slot - 1);
+
       while (from_slot <= timestamp.slot) {
          const uint64_t epoch_id = reward_epoch_for_slot(static_cast<uint32_t>(from_slot));
          const uint64_t epoch_end = reward_epoch_end_slot(epoch_id);
@@ -281,7 +287,8 @@ namespace eosiosystem {
             query_end = std::min(query_end, gas_end);
          }
          const auto samples = eosio::get_producer_slot_stats_v2(
-            static_cast<uint32_t>(from_slot), static_cast<uint32_t>(query_end));
+            previous_produced_slot, static_cast<uint32_t>(from_slot),
+            static_cast<uint32_t>(query_end));
          accumulate_producer_slot_stats(epoch_id, static_cast<uint32_t>(from_slot),
                                         static_cast<uint32_t>(query_end), samples);
          accumulate_gas_slot_stats(static_cast<uint32_t>(from_slot),
