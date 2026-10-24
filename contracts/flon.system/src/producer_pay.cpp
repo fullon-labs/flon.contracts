@@ -85,23 +85,64 @@ namespace eosiosystem {
       check(now >= _gstate.reward_started_time, "producer rewards have not started");
       const block_timestamp now_slot(now);
       const block_timestamp start_slot(_gstate.reward_started_time);
-      return (now_slot.slot - start_slot.slot) / reward_epoch_slots;
+      return reward_epoch_for_slot(now_slot.slot);
    }
 
    uint64_t system_contract::reward_epoch_for_slot( uint32_t slot ) const {
       check(_gstate.reward_started_time != time_point(), "producer rewards have not started");
       const block_timestamp start_slot(_gstate.reward_started_time);
       check(slot >= start_slot.slot, "slot is before producer rewards started");
-      return (slot - start_slot.slot) / reward_epoch_slots;
+      reward_epoch_config_v2_singleton config(get_self(), get_self().value);
+      if (config.exists()) {
+         const auto value = config.get();
+         if (slot >= value.start_slot) {
+            return value.first_epoch_id +
+                   (static_cast<uint64_t>(slot) - value.start_slot) / value.epoch_slots;
+         }
+      }
+      return (static_cast<uint64_t>(slot) - start_slot.slot) /
+             legacy_reward_epoch_slots;
+   }
+
+   uint32_t system_contract::reward_epoch_start_slot( uint64_t epoch_id ) const {
+      const block_timestamp legacy_start(_gstate.reward_started_time);
+      reward_epoch_config_v2_singleton config(get_self(), get_self().value);
+      uint64_t result = 0;
+      if (config.exists() && epoch_id >= config.get().first_epoch_id) {
+         const auto value = config.get();
+         const uint64_t delta = epoch_id - value.first_epoch_id;
+         check(delta <= (std::numeric_limits<uint32_t>::max() - value.start_slot) /
+                           value.epoch_slots,
+               "reward epoch slot overflow");
+         result = static_cast<uint64_t>(value.start_slot) +
+                  delta * value.epoch_slots;
+      } else {
+         check(epoch_id <= (std::numeric_limits<uint32_t>::max() - legacy_start.slot) /
+                              legacy_reward_epoch_slots,
+               "reward epoch slot overflow");
+         result = static_cast<uint64_t>(legacy_start.slot) +
+                  epoch_id * legacy_reward_epoch_slots;
+      }
+      check(result <= std::numeric_limits<uint32_t>::max(), "reward epoch slot overflow");
+      return static_cast<uint32_t>(result);
+   }
+
+   uint32_t system_contract::reward_epoch_end_slot( uint64_t epoch_id ) const {
+      reward_epoch_config_v2_singleton config(get_self(), get_self().value);
+      const uint32_t slots = config.exists() && epoch_id >= config.get().first_epoch_id
+         ? config.get().epoch_slots : legacy_reward_epoch_slots;
+      const uint64_t result = static_cast<uint64_t>(reward_epoch_start_slot(epoch_id)) + slots - 1;
+      check(result <= std::numeric_limits<uint32_t>::max(), "reward epoch slot overflow");
+      return static_cast<uint32_t>(result);
    }
 
    void system_contract::accumulate_producer_slot_stats( uint64_t epoch_id,
                                                           uint32_t from_slot,
-                                                          uint32_t to_slot ) {
-      const auto stats = eosio::get_producer_slot_stats(from_slot, to_slot);
+                                                          uint32_t to_slot,
+                                                          const std::vector<eosio::producer_slot_stats>& samples ) {
       bp_performance_table bp_stats(get_self(), epoch_id);
 
-      for (const auto& sample : stats) {
+      for (const auto& sample : samples) {
          auto itr = bp_stats.find(sample.producer.value);
          if (itr == bp_stats.end()) {
             bp_stats.emplace(get_self(), [&](auto& row) {
@@ -183,16 +224,14 @@ namespace eosiosystem {
       epoch_performance_table epochs(get_self(), get_self().value);
       auto epoch_itr = epochs.find(epoch_id);
       if (epoch_itr == epochs.end()) {
-         const block_timestamp reward_start(_gstate.reward_started_time);
-         const uint64_t epoch_start = static_cast<uint64_t>(reward_start.slot) +
-                                      epoch_id * reward_epoch_slots;
+         const uint32_t epoch_start = reward_epoch_start_slot(epoch_id);
          const auto active_producers = eosio::get_active_producers();
          const auto packed_schedule = eosio::pack(active_producers);
          const auto schedule_hash = eosio::sha256(packed_schedule.data(), packed_schedule.size());
          epochs.emplace(get_self(), [&](auto& row) {
             row.epoch_id = epoch_id;
             row.start_slot = static_cast<uint32_t>(epoch_start);
-            row.end_slot = static_cast<uint32_t>(epoch_start + reward_epoch_slots - 1);
+            row.end_slot = reward_epoch_end_slot(epoch_id);
             row.schedule_hash = schedule_hash;
             row.complete_sample = from_slot == epoch_start;
          });
@@ -227,14 +266,23 @@ namespace eosiosystem {
          return;
       }
 
-      const block_timestamp reward_start(_gstate.reward_started_time);
       while (from_slot <= timestamp.slot) {
          const uint64_t epoch_id = reward_epoch_for_slot(static_cast<uint32_t>(from_slot));
-         const uint64_t epoch_end = static_cast<uint64_t>(reward_start.slot) +
-                                    (epoch_id + 1) * reward_epoch_slots - 1;
-         const uint64_t query_end = std::min<uint64_t>(timestamp.slot, epoch_end);
+         const uint64_t epoch_end = reward_epoch_end_slot(epoch_id);
+         uint64_t query_end = std::min<uint64_t>(timestamp.slot, epoch_end);
+         gas_reward_config_singleton gas_config_table(get_self(), get_self().value);
+         if (gas_config_table.exists() && gas_config_table.get().enabled) {
+            const auto gas_config = gas_config_table.get();
+            const uint64_t gas_epoch = from_slot / gas_config.epoch_slots;
+            const uint64_t gas_end = (gas_epoch + 1) * uint64_t(gas_config.epoch_slots) - 1;
+            query_end = std::min(query_end, gas_end);
+         }
+         const auto samples = eosio::get_producer_slot_stats(
+            static_cast<uint32_t>(from_slot), static_cast<uint32_t>(query_end));
          accumulate_producer_slot_stats(epoch_id, static_cast<uint32_t>(from_slot),
-                                        static_cast<uint32_t>(query_end));
+                                        static_cast<uint32_t>(query_end), samples);
+         accumulate_gas_slot_stats(static_cast<uint32_t>(from_slot),
+                                   static_cast<uint32_t>(query_end), samples);
          from_slot = query_end + 1;
       }
 
@@ -273,6 +321,255 @@ namespace eosiosystem {
          stats->expected_blocks);
    }
 
+   void system_contract::classify_producer_epoch( uint64_t epoch_id,
+                                                   const bp_performance& stats,
+                                                   bool complete_sample,
+                                                   bool network_incident ) {
+      auto status = bp_performance_status::qualified;
+      if (!complete_sample || stats.expected_blocks < min_expected_blocks) {
+         status = bp_performance_status::insufficient_sample;
+      } else if (network_incident) {
+         status = bp_performance_status::network_incident;
+      } else if (stats.produced_blocks * 100 < stats.expected_blocks * 90) {
+         status = bp_performance_status::suspended;
+      } else if (stats.produced_blocks * 100 < stats.expected_blocks * 95) {
+         status = bp_performance_status::warning;
+      } else if (stats.produced_blocks * 100 < stats.expected_blocks * 99) {
+         status = bp_performance_status::degraded;
+      }
+
+      producer_performance_state_table states(get_self(), get_self().value);
+      auto state_itr = states.find(stats.producer.value);
+      const bool was_probation = state_itr != states.end() &&
+         state_itr->status == static_cast<uint8_t>(bp_performance_status::probation);
+      if (was_probation && (status == bp_performance_status::insufficient_sample ||
+                            status == bp_performance_status::network_incident)) {
+         status = bp_performance_status::probation;
+      }
+      const bool already_suspended = state_itr != states.end() &&
+         state_itr->status == static_cast<uint8_t>(bp_performance_status::suspended);
+      if (already_suspended) status = bp_performance_status::suspended;
+
+      uint32_t warnings = state_itr == states.end() ? 0 : state_itr->warning_count;
+      if (status == bp_performance_status::warning ||
+          (status == bp_performance_status::suspended && !already_suspended)) ++warnings;
+      uint32_t suspensions = state_itr == states.end() ? 0 : state_itr->suspension_count;
+      if (status == bp_performance_status::suspended && !already_suspended) ++suspensions;
+      const uint64_t suspended_until = status == bp_performance_status::suspended
+         ? (already_suspended ? state_itr->suspended_until_epoch
+                              : epoch_id + suspension_cooldown_epochs(suspensions) + 1)
+         : (state_itr == states.end() ? 0 : state_itr->suspended_until_epoch);
+
+      if (state_itr == states.end()) {
+         states.emplace(get_self(), [&](auto& row) {
+            row.producer = stats.producer;
+            row.status = static_cast<uint8_t>(status);
+            row.warning_count = warnings;
+            row.suspended_until_epoch = suspended_until;
+            row.suspension_count = suspensions;
+            row.probation_started_epoch = 0;
+            row.probation_missed_streak = 0;
+         });
+      } else {
+         states.modify(state_itr, same_payer, [&](auto& row) {
+            row.status = static_cast<uint8_t>(status);
+            row.warning_count = warnings;
+            row.suspended_until_epoch = suspended_until;
+            row.suspension_count = suspensions;
+            if (status != bp_performance_status::probation) {
+               row.probation_started_epoch = 0;
+               row.probation_missed_streak = 0;
+            }
+         });
+      }
+
+      bp_performance_table epoch_stats(get_self(), epoch_id);
+      auto epoch_itr = epoch_stats.find(stats.producer.value);
+      if (epoch_itr != epoch_stats.end()) {
+         epoch_stats.modify(epoch_itr, same_payer, [&](auto& row) {
+            row.status = static_cast<uint8_t>(status);
+            row.warning_count = warnings;
+         });
+      }
+   }
+
+   void system_contract::advance_reward_epoch_seal( uint16_t max_rows ) {
+      check(max_rows > 0 && max_rows <= 30, "seal row limit must be between 1 and 30");
+      if (_gstate.reward_started_time == time_point() ||
+          current_time_point() < _gstate.reward_started_time) return;
+
+      reward_epoch_singleton epoch_state_table(get_self(), get_self().value);
+      auto epoch_state = epoch_state_table.exists() ? epoch_state_table.get() : reward_epoch_state{};
+      if (current_reward_epoch(current_time_point()) <= epoch_state.next_epoch_to_close) return;
+
+      reward_seal_singleton seal_table(get_self(), get_self().value);
+      auto seal = seal_table.exists() ? seal_table.get() : reward_seal_state{};
+      if (!seal_table.exists() ||
+          (seal.phase == static_cast<uint8_t>(reward_seal_phase::sealed) &&
+           seal.epoch_id < epoch_state.next_epoch_to_close)) {
+         seal = reward_seal_state{};
+         seal.epoch_id = epoch_state.next_epoch_to_close;
+         seal.phase = static_cast<uint8_t>(reward_seal_phase::ending);
+      }
+      check(seal.epoch_id == epoch_state.next_epoch_to_close,
+            "reward seal cursor does not match epoch cursor");
+
+      epoch_performance_table epochs(get_self(), get_self().value);
+      auto performance_epoch = epochs.find(seal.epoch_id);
+      const bool complete_sample = performance_epoch != epochs.end() &&
+                                   performance_epoch->complete_sample;
+      bp_performance_table stats(get_self(), seal.epoch_id);
+      uint16_t processed = 0;
+
+      if (seal.phase == static_cast<uint8_t>(reward_seal_phase::ending) && seal.stage == 0) {
+         auto itr = seal.cursor.value ? stats.upper_bound(seal.cursor.value) : stats.begin();
+         while (itr != stats.end() && processed < max_rows) {
+            if (itr->expected_blocks > 0) {
+               ++seal.active_bp_count;
+               if (complete_sample && itr->expected_blocks >= min_expected_blocks &&
+                   itr->produced_blocks * 100 < itr->expected_blocks * 90) {
+                  ++seal.failed_bp_count;
+               }
+            }
+            seal.cursor = itr->producer;
+            ++itr;
+            ++processed;
+         }
+         if (itr == stats.end()) {
+            seal.network_incident = complete_sample && seal.active_bp_count > 0 &&
+               static_cast<uint64_t>(seal.failed_bp_count) * 3 > seal.active_bp_count;
+            seal.stage = 1;
+            seal.cursor = name{};
+         }
+      }
+
+      if (seal.phase == static_cast<uint8_t>(reward_seal_phase::ending) &&
+          seal.stage == 1 && processed < max_rows) {
+         auto itr = seal.cursor.value ? stats.upper_bound(seal.cursor.value) : stats.begin();
+         while (itr != stats.end() && processed < max_rows) {
+            const auto snapshot = *itr;
+            classify_producer_epoch(seal.epoch_id, snapshot, complete_sample,
+                                    seal.network_incident);
+            seal.cursor = itr->producer;
+            ++itr;
+            ++processed;
+         }
+         if (itr == stats.end()) {
+            if (performance_epoch == epochs.end()) {
+               epochs.emplace(get_self(), [&](auto& row) {
+                  row.epoch_id = seal.epoch_id;
+                  row.start_slot = reward_epoch_start_slot(seal.epoch_id);
+                  row.end_slot = reward_epoch_end_slot(seal.epoch_id);
+                  row.complete_sample = false;
+                  row.active_bp_count = seal.active_bp_count;
+                  row.failed_bp_count = seal.failed_bp_count;
+                  row.network_incident = seal.network_incident;
+                  row.closed = false;
+               });
+            } else {
+               epochs.modify(performance_epoch, same_payer, [&](auto& row) {
+                  row.active_bp_count = seal.active_bp_count;
+                  row.failed_bp_count = seal.failed_bp_count;
+                  row.network_incident = seal.network_incident;
+               });
+            }
+            seal.stage = 2;
+            seal.cursor = name{};
+         }
+      }
+
+      if (seal.phase == static_cast<uint8_t>(reward_seal_phase::ending) &&
+          seal.stage == 2 && processed < max_rows) {
+         epoch_rewards_table rewards(get_self(), seal.epoch_id);
+         auto itr = seal.cursor.value ? rewards.upper_bound(seal.cursor.value) : rewards.begin();
+         while (itr != rewards.end() && processed < max_rows) {
+            const auto producer_name = itr->producer;
+            const auto gross = itr->rewards;
+            auto producer_itr = _producers.find(producer_name.value);
+            check(producer_itr != _producers.end(), "epoch reward producer not found");
+            auto stat_itr = stats.find(producer_name.value);
+            const bp_performance* producer_stats = stat_itr == stats.end() ? nullptr : &*stat_itr;
+            const uint32_t factor = reward_factor_basis_points(producer_stats,
+                                                                seal.network_incident);
+            asset eligible(static_cast<int64_t>(static_cast<int128_t>(gross.amount) *
+                                                 factor / ratio_boost), gross.symbol);
+            asset shared(0, gross.symbol);
+            if (itr->reward_shared_ratio > 0) {
+               shared.amount = static_cast<int64_t>(static_cast<int128_t>(eligible.amount) *
+                                                    itr->reward_shared_ratio / 10000);
+            }
+            const asset producer_reward = eligible - shared;
+            const asset forfeited = gross - eligible;
+            if (producer_reward.amount > 0) {
+               producer_epoch_claims_table claim_rows(get_self(), producer_name.value);
+               check(claim_rows.find(seal.epoch_id) == claim_rows.end(),
+                     "duplicate producer epoch claim row");
+               claim_rows.emplace(get_self(), [&](auto& row) {
+                  row.epoch_id = seal.epoch_id;
+                  row.quantity = producer_reward;
+               });
+               _producers.modify(producer_itr, same_payer, [&](auto& row) {
+                  row.unclaimed_rewards += producer_reward;
+               });
+            }
+            if (shared.amount > 0) {
+               token::transfer_action(token_account, {{get_self(), active_permission}})
+                  .send(get_self(), voter_reward_account, shared, producer_name.to_string());
+               _gstate.total_unclaimed_rewards.amount -= shared.amount;
+            }
+            if (forfeited.amount > 0) _gstate.total_unclaimed_rewards.amount -= forfeited.amount;
+            itr = rewards.erase(itr);
+            ++processed;
+         }
+         if (itr == rewards.end()) {
+            seal.phase = static_cast<uint8_t>(reward_seal_phase::applying_deltas);
+            seal.stage = 0;
+            seal.cursor = name{};
+         }
+      }
+
+      if (seal.phase == static_cast<uint8_t>(reward_seal_phase::applying_deltas) &&
+          processed < max_rows) {
+         pending_vote_deltas_table deltas(get_self(), get_self().value);
+         auto delta = deltas.begin();
+         while (delta != deltas.end() && processed < max_rows) {
+            auto producer_itr = _producers.find(delta->producer.value);
+            check(producer_itr != _producers.end(), "pending vote producer not found");
+            _producers.modify(producer_itr, same_payer, [&](auto& row) {
+               row.total_votes += delta->votes_delta;
+               check(row.total_votes >= 0, "producer's elected votes can not be negative");
+            });
+            delta = deltas.erase(delta);
+            ++processed;
+         }
+
+         flon::voter_reward::epoch_state::table voter_epoch_state(
+            voter_reward_account, voter_reward_account.value);
+         auto voter_state = voter_epoch_state.exists()
+            ? voter_epoch_state.get() : flon::voter_reward::epoch_state{};
+         if (voter_state.next_epoch_to_close == seal.epoch_id) {
+            flon::voter_reward::sealepoch_action seal_voter_epoch{
+               voter_reward_account, {{get_self(), active_permission}}
+            };
+            seal_voter_epoch.send(seal.epoch_id, max_rows);
+            voter_state = voter_epoch_state.exists()
+               ? voter_epoch_state.get() : flon::voter_reward::epoch_state{};
+         }
+         if (deltas.begin() == deltas.end() &&
+             voter_state.next_epoch_to_close > seal.epoch_id) {
+            auto epoch_itr = epochs.find(seal.epoch_id);
+            if (epoch_itr != epochs.end()) {
+               epochs.modify(epoch_itr, same_payer, [&](auto& row) { row.closed = true; });
+            }
+            seal.phase = static_cast<uint8_t>(reward_seal_phase::sealed);
+            epoch_state.next_epoch_to_close += 1;
+            epoch_state_table.set(epoch_state, get_self());
+         }
+      }
+
+      seal_table.set(seal, get_self());
+   }
+
    void system_contract::onblock( ignore<block_header> ) {
       using namespace eosio;
 
@@ -302,11 +599,13 @@ namespace eosiosystem {
 
       if (_gstate.reward_started_time != time_point() && now >= _gstate.reward_started_time) {
          record_producer_slot_stats(timestamp);
+         advance_reward_epoch_seal(1);
       }
 
-      // Epoch settlement is intentionally transaction-driven. It performs
-      // reward transfers and table scans that must never delay block production
-      // or make every speculative onblock repeat a failing settlement.
+      advance_gas_settlement(timestamp.slot);
+
+      // Epoch sealing is advanced by bounded onblock steps. No external
+      // settlement transaction is required for protocol correctness.
 
       /**
        * At startup the initial producer may not be one that is registered / elected
@@ -353,8 +652,15 @@ namespace eosiosystem {
          }
       }
 
+      // Never build a producer schedule from a partially applied vote-delta
+      // boundary. The next schedule update runs after the epoch is SEALED.
+      reward_seal_singleton schedule_seal_table(get_self(), get_self().value);
+      const bool vote_boundary_in_progress = schedule_seal_table.exists() &&
+         schedule_seal_table.get().phase != static_cast<uint8_t>(reward_seal_phase::sealed);
+
       /// only update block producers once every minute, block_timestamp is in half seconds
-      if( timestamp.slot - _gstate.last_producer_schedule_update.slot > 120 ) {
+      if( !vote_boundary_in_progress &&
+          timestamp.slot - _gstate.last_producer_schedule_update.slot > 120 ) {
          update_elected_producers( timestamp );
 
          #ifdef ENABLE_NAME_BID
@@ -381,210 +687,57 @@ namespace eosiosystem {
    }
 
    #ifdef ENABLE_VOTING_PRODUCER
-   void system_contract::claimrewards( const name& owner ) {
-      require_auth( owner );
+   void system_contract::claimrewards( const name& caller, const name& producer,
+                                       uint16_t max_steps ) {
+      require_auth(caller);
+      check(max_steps > 0 && max_steps <= 48, "max_steps must be between 1 and 48");
 
-      auto prod = _producers.find( owner.value );
+      auto prod = _producers.find(producer.value);
       check( prod != _producers.end(), "producer not found" );
-      check( prod->unclaimed_rewards.amount > 0, "no rewards to claim" );
+      gas_epoch_claims_table gas_claim_rows(get_self(), producer.value);
+      const bool has_base = prod->unclaimed_rewards.amount > 0;
+      const bool has_gas = gas_claim_rows.begin() != gas_claim_rows.end();
+      check(has_base || has_gas, "all rewards claimed");
 
-      asset producer_rewards = prod->unclaimed_rewards;
+      asset producer_rewards(0, core_symbol());
+      producer_epoch_claims_table claim_rows(get_self(), producer.value);
+      uint16_t processed = 0;
+      auto claim_row = claim_rows.begin();
+      while (claim_row != claim_rows.end() && processed < max_steps) {
+         producer_rewards += claim_row->quantity;
+         claim_row = claim_rows.erase(claim_row);
+         ++processed;
+      }
+      // Rewards accumulated before prodclaims existed are consumed as one
+      // legacy step once all explicit hourly rows have been drained.
+      if (has_base && processed == 0) {
+         producer_rewards = prod->unclaimed_rewards;
+      }
 
-      // Update producer/global state before inline transfers to avoid re-entrant duplicate claims.
-      _producers.modify( prod, same_payer, [&](auto& p ) {
-         p.unclaimed_rewards.amount = 0;
-         p.last_claim_time = current_time_point();
-      });
-      _gstate.total_unclaimed_rewards.amount -= producer_rewards.amount;
-
-      // Transfer producer rewards to owner.
       if (producer_rewards.amount > 0) {
+         _producers.modify(prod, same_payer, [&](auto& row) {
+            row.unclaimed_rewards -= producer_rewards;
+            row.last_claim_time = current_time_point();
+         });
+         _gstate.total_unclaimed_rewards.amount -= producer_rewards.amount;
+
          token::transfer_action transfer_act( token_account, {{get_self(), active_permission}} );
-         transfer_act.send( get_self(), owner, producer_rewards, "producer rewards" );
+         transfer_act.send(get_self(), producer, producer_rewards, "producer base rewards");
       }
-   }
-
-   void system_contract::closeepoch( uint64_t epoch_id ) {
-      check(_gstate.reward_started_time != time_point(), "producer rewards have not started");
-      check(current_reward_epoch(current_time_point()) > epoch_id, "reward epoch has not ended");
-
-      reward_epoch_singleton epoch_state_tbl(get_self(), get_self().value);
-      auto epoch_state = epoch_state_tbl.exists() ? epoch_state_tbl.get() : reward_epoch_state{};
-      check(epoch_id == epoch_state.next_epoch_to_close, "reward epochs must be closed sequentially");
-
-      epoch_performance_table epochs(get_self(), get_self().value);
-      auto perf_epoch_itr = epochs.find(epoch_id);
-      const bool complete_sample = perf_epoch_itr != epochs.end() && perf_epoch_itr->complete_sample;
-
-      bp_performance_table bp_stats(get_self(), epoch_id);
-      uint32_t active_bp_count = 0;
-      uint32_t failed_bp_count = 0;
-      for (const auto& stats : bp_stats) {
-         if (stats.expected_blocks == 0) continue;
-         ++active_bp_count;
-         if (complete_sample && stats.expected_blocks >= min_expected_blocks &&
-             stats.produced_blocks * 100 < stats.expected_blocks * 90) {
-            ++failed_bp_count;
+      if (has_gas) {
+         asset gas_rewards(0, core_symbol());
+         uint16_t gas_steps = 0;
+         auto gas_claim = gas_claim_rows.begin();
+         while (gas_claim != gas_claim_rows.end() && gas_steps < max_steps) {
+            gas_rewards += gas_claim->quantity;
+            gas_claim = gas_claim_rows.erase(gas_claim);
+            ++gas_steps;
+         }
+         if (gas_rewards.amount > 0) {
+            token::transfer_action(token_account, {{gas_account, active_permission}})
+               .send(gas_account, producer, gas_rewards, "producer GAS rewards");
          }
       }
-      const bool network_incident = complete_sample && active_bp_count > 0 &&
-                                    static_cast<uint64_t>(failed_bp_count) * 3 > active_bp_count;
-
-      producer_performance_state_table producer_states(get_self(), get_self().value);
-      for (auto stats_itr = bp_stats.begin(); stats_itr != bp_stats.end(); ++stats_itr) {
-         auto status = bp_performance_status::qualified;
-         if (!complete_sample || stats_itr->expected_blocks < min_expected_blocks) {
-            status = bp_performance_status::insufficient_sample;
-         } else if (network_incident) {
-            status = bp_performance_status::network_incident;
-         } else if (stats_itr->produced_blocks * 100 < stats_itr->expected_blocks * 90) {
-            status = bp_performance_status::suspended;
-         } else if (stats_itr->produced_blocks * 100 < stats_itr->expected_blocks * 95) {
-            status = bp_performance_status::warning;
-         } else if (stats_itr->produced_blocks * 100 < stats_itr->expected_blocks * 99) {
-            status = bp_performance_status::degraded;
-         }
-
-         auto state_itr = producer_states.find(stats_itr->producer.value);
-         const bool was_probation = state_itr != producer_states.end() &&
-            state_itr->status == static_cast<uint8_t>(bp_performance_status::probation);
-         // An incomplete sample or a network-wide incident does not prove that a
-         // resumed producer has completed probation. Keep probation active until
-         // the producer has a complete, individually classifiable epoch.
-         if (was_probation && (status == bp_performance_status::insufficient_sample ||
-                               status == bp_performance_status::network_incident)) {
-            status = bp_performance_status::probation;
-         }
-         const bool already_suspended = state_itr != producer_states.end() &&
-            state_itr->status == static_cast<uint8_t>(bp_performance_status::suspended);
-         if (already_suspended) status = bp_performance_status::suspended;
-         uint32_t warning_count = state_itr == producer_states.end() ? 0 : state_itr->warning_count;
-         if (status == bp_performance_status::warning ||
-             (status == bp_performance_status::suspended && !already_suspended))
-            ++warning_count;
-         uint32_t suspension_count = state_itr == producer_states.end() ? 0 : state_itr->suspension_count;
-         if (status == bp_performance_status::suspended && !already_suspended) ++suspension_count;
-         const uint64_t suspended_until = status == bp_performance_status::suspended
-            ? (already_suspended ? state_itr->suspended_until_epoch
-                                 : epoch_id + suspension_cooldown_epochs(suspension_count) + 1)
-            : (state_itr == producer_states.end() ? 0 : state_itr->suspended_until_epoch);
-
-         if (state_itr == producer_states.end()) {
-            producer_states.emplace(get_self(), [&](auto& row) {
-               row.producer = stats_itr->producer;
-               row.status = static_cast<uint8_t>(status);
-               row.warning_count = warning_count;
-               row.suspended_until_epoch = suspended_until;
-               row.suspension_count = suspension_count;
-               row.probation_started_epoch = 0;
-               row.probation_missed_streak = 0;
-            });
-         } else {
-            producer_states.modify(state_itr, same_payer, [&](auto& row) {
-               row.status = static_cast<uint8_t>(status);
-               row.warning_count = warning_count;
-               row.suspended_until_epoch = suspended_until;
-               row.suspension_count = suspension_count;
-               if (status != bp_performance_status::probation)
-                  row.probation_started_epoch = 0;
-               if (status != bp_performance_status::probation)
-                  row.probation_missed_streak = 0;
-            });
-         }
-         bp_stats.modify(stats_itr, same_payer, [&](auto& row) {
-            row.status = static_cast<uint8_t>(status);
-            row.warning_count = warning_count;
-         });
-      }
-
-      if (perf_epoch_itr == epochs.end()) {
-         const block_timestamp reward_start(_gstate.reward_started_time);
-         const uint64_t epoch_start = static_cast<uint64_t>(reward_start.slot) +
-                                      epoch_id * reward_epoch_slots;
-         epochs.emplace(get_self(), [&](auto& row) {
-            row.epoch_id = epoch_id;
-            row.start_slot = static_cast<uint32_t>(epoch_start);
-            row.end_slot = static_cast<uint32_t>(epoch_start + reward_epoch_slots - 1);
-            row.complete_sample = false;
-            row.active_bp_count = active_bp_count;
-            row.failed_bp_count = failed_bp_count;
-            row.network_incident = network_incident;
-            row.closed = true;
-         });
-      } else {
-         epochs.modify(perf_epoch_itr, same_payer, [&](auto& row) {
-            row.active_bp_count = active_bp_count;
-            row.failed_bp_count = failed_bp_count;
-            row.network_incident = network_incident;
-            row.closed = true;
-         });
-      }
-
-      epoch_rewards_table epoch_rewards(get_self(), epoch_id);
-      for (auto itr = epoch_rewards.begin(); itr != epoch_rewards.end();) {
-         const auto producer_name = itr->producer;
-         const auto gross_rewards = itr->rewards;
-         auto prod = _producers.find(producer_name.value);
-         check(prod != _producers.end(), "epoch reward producer not found");
-
-         const auto stats_itr = bp_stats.find(producer_name.value);
-         const bp_performance* producer_stats = stats_itr == bp_stats.end() ? nullptr : &*stats_itr;
-         const uint32_t reward_factor = reward_factor_basis_points(producer_stats, network_incident);
-         asset eligible_rewards(
-            static_cast<int64_t>(static_cast<int128_t>(gross_rewards.amount) * reward_factor / ratio_boost),
-            gross_rewards.symbol);
-         const asset forfeited_rewards = gross_rewards - eligible_rewards;
-
-         asset shared_rewards(0, gross_rewards.symbol);
-         if (itr->reward_shared_ratio > 0) {
-            const int128_t shared_amount = static_cast<int128_t>(eligible_rewards.amount) *
-                                           itr->reward_shared_ratio / 10000;
-            check(shared_amount <= std::numeric_limits<int64_t>::max(),
-                  "shared reward overflow");
-            shared_rewards.amount = static_cast<int64_t>(shared_amount);
-         }
-         const asset producer_rewards = eligible_rewards - shared_rewards;
-
-         if (producer_rewards.amount > 0) {
-            _producers.modify(prod, same_payer, [&](auto& p) {
-               p.unclaimed_rewards += producer_rewards;
-            });
-         }
-
-         if (shared_rewards.amount > 0) {
-            token::transfer_action transfer_act(token_account, {{get_self(), active_permission}});
-            transfer_act.send(get_self(), voter_reward_account, shared_rewards,
-                              producer_name.to_string());
-            _gstate.total_unclaimed_rewards.amount -= shared_rewards.amount;
-         }
-
-         if (forfeited_rewards.amount > 0) {
-            _gstate.total_unclaimed_rewards.amount -= forfeited_rewards.amount;
-         }
-
-         itr = epoch_rewards.erase(itr);
-      }
-
-      flon::voter_reward::closeepoch_action close_reward_epoch{
-         voter_reward_account, {{get_self(), active_permission}}
-      };
-      close_reward_epoch.send(epoch_id);
-
-      // Ranking changes submitted during epoch N become active only after N
-      // has been rewarded with its immutable vote snapshot.
-      pending_vote_deltas_table vote_deltas(get_self(), get_self().value);
-      for (auto delta_itr = vote_deltas.begin(); delta_itr != vote_deltas.end();) {
-         auto prod = _producers.find(delta_itr->producer.value);
-         check(prod != _producers.end(), "pending vote producer not found");
-         _producers.modify(prod, same_payer, [&](auto& p) {
-            p.total_votes += delta_itr->votes_delta;
-            check(p.total_votes >= 0, "producer's elected votes can not be negative");
-         });
-         delta_itr = vote_deltas.erase(delta_itr);
-      }
-
-      epoch_state.next_epoch_to_close += 1;
-      epoch_state_tbl.set(epoch_state, get_self());
    }
 
    void system_contract::setprodcfg( const time_point& schedule_start, const time_point& reward_epoch_start,
@@ -610,6 +763,11 @@ namespace eosiosystem {
       if (_gstate.reward_started_time == time_point() || _gstate.reward_started_time > now ) {
          check(reward_epoch_start > now, "reward epoch start must be in the future");
          _gstate.reward_started_time = reward_epoch_start;
+         reward_epoch_config_v2_singleton reward_config(get_self(), get_self().value);
+         if (!reward_config.exists()) {
+            const block_timestamp start_slot(reward_epoch_start);
+            reward_config.set({0, start_slot.slot, reward_epoch_slots}, get_self());
+         }
          // This legacy field remains serialized for live-chain compatibility;
          // the fixed protocol schedule no longer reads a configurable reward.
          _gstate.initial_rewards_per_block = asset(0, core_symbol());
@@ -617,6 +775,32 @@ namespace eosiosystem {
          check( reward_epoch_start == _gstate.reward_started_time,
             "reward epoch start cannot change after reward accounting has started");
       }
+   }
+
+   void system_contract::setrwdcfg( const time_point& start_time ) {
+      require_auth(get_self());
+      check(_gstate.reward_started_time != time_point(), "producer rewards have not been configured");
+
+      reward_epoch_config_v2_singleton config(get_self(), get_self().value);
+      check(!config.exists(), "hourly reward epochs are already configured");
+
+      const block_timestamp start_slot(start_time);
+      const block_timestamp now_slot(current_time_point());
+      const block_timestamp legacy_start(_gstate.reward_started_time);
+      check(start_slot.slot > now_slot.slot, "hourly reward epoch start must be in the future");
+      check(start_slot.slot >= legacy_start.slot, "hourly reward epoch start precedes rewards");
+
+      const uint64_t offset = static_cast<uint64_t>(start_slot.slot) - legacy_start.slot;
+      check(offset % legacy_reward_epoch_slots == 0,
+            "hourly reward epochs must start on a legacy epoch boundary");
+      const uint64_t first_epoch_id = offset / legacy_reward_epoch_slots;
+
+      reward_epoch_singleton state_table(get_self(), get_self().value);
+      const auto state = state_table.exists() ? state_table.get() : reward_epoch_state{};
+      check(state.next_epoch_to_close <= first_epoch_id,
+            "hourly reward boundary is earlier than the settlement cursor");
+
+      config.set({first_epoch_id, start_slot.slot, reward_epoch_slots}, get_self());
    }
    #endif//ENABLE_VOTING_PRODUCER
 } //namespace eosiosystem

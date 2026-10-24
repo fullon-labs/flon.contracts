@@ -21,7 +21,7 @@ class [[eosio::contract("gas.reward")]] gas_reward : public eosio::contract {
    [[eosio::action]] void creditbatch(uint64_t epoch_id,
       const std::vector<name>& owners, const std::vector<asset>& quantities);
    [[eosio::action]] void finalize(uint64_t epoch_id, checksum256 allocation_hash);
-   [[eosio::action]] void claimrewards(name owner);
+   [[eosio::action]] void claimrewards(name caller, name owner, uint16_t max_steps);
 
    [[eosio::on_notify("flon.token::transfer")]]
    void ontransfer(name from, name to, asset quantity, std::string memo);
@@ -29,6 +29,7 @@ class [[eosio::contract("gas.reward")]] gas_reward : public eosio::contract {
    using openepoch_action = eosio::action_wrapper<"openepoch"_n, &gas_reward::openepoch>;
    using creditbatch_action = eosio::action_wrapper<"creditbatch"_n, &gas_reward::creditbatch>;
    using finalize_action = eosio::action_wrapper<"finalize"_n, &gas_reward::finalize>;
+   using claimrewards_action = eosio::action_wrapper<"claimrewards"_n, &gas_reward::claimrewards>;
 
  private:
    static constexpr name system_account = "flon"_n;
@@ -70,6 +71,13 @@ class [[eosio::contract("gas.reward")]] gas_reward : public eosio::contract {
       uint64_t primary_key() const { return owner.value; }
    };
    using epoch_credits = eosio::multi_index<"epochcredits"_n, epoch_credit>;
+
+   struct [[eosio::table]] owner_epoch_reward {
+      uint64_t epoch_id;
+      asset quantity;
+      uint64_t primary_key() const { return epoch_id; }
+   };
+   using owner_epoch_rewards = eosio::multi_index<"ownerepochs"_n, owner_epoch_reward>;
 
    global_state get_global() const;
 };

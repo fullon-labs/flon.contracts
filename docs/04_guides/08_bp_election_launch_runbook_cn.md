@@ -4,7 +4,11 @@ title: BP 投票竞选上线与运行操作手册
 
 # BP 投票竞选上线与运行操作手册
 
-本文是 FullOn Block Producer（BP）投票竞选从测试链验证、主网上线到日常运行的操作手册。它覆盖链下节点准备、链上合约和参数启用，以及 Candidate、Active BP、Standby BP、Voter 和结算 Keeper 的实际操作流程。
+> 版本提示：本文的 1 小时 Epoch 参数适用于包含 `rewardcfgv2/setrwdcfg`
+> 的目标版本。已有链必须先完成旧 Epoch，再按奖励设计文档执行边界迁移；
+> 禁止直接把旧六小时状态按一小时重新解释。
+
+本文是 FullOn Block Producer（BP）投票竞选从测试链验证、主网上线到日常运行的操作手册。它覆盖链下节点准备、链上合约和参数启用，以及 Candidate、Active BP、Standby BP 和 Voter 的实际操作流程。
 
 本文命令以 `fucli` 为例。执行前必须把 URL、账户、公钥、时间和数量替换成目标网络的真实值，并先在测试链完整演练。生产环境不得把私钥写入脚本、镜像、Git 仓库或命令历史。
 
@@ -16,7 +20,6 @@ title: BP 投票竞选上线与运行操作手册
 | Active BP | 合格 Candidate 中按有效票权排名进入当前法定席位 | 签名和生产区块、保持可用率 | 基础挖矿奖励、GAS Active 奖励；可按公开比例分享基础奖励给 Voter |
 | Standby BP | Active BP 之后排名最高的最多 30 个合格 Candidate | 保持完整节点同步和生产就绪，随时接替 | 按 Epoch Standby 快照获得 GAS Standby 奖励；不领取 Active BP 基础挖矿奖励 |
 | Voter | 锁定 FLON 获得不可转让用途的 GLON，并选择 BP | 动态投票、监督 BP、参与 DAO 治理 | BP 按 `reward_shared_ratio` 分享的基础挖矿奖励 |
-| Keeper | 任意账户或自动化服务 | 关闭基础奖励 epoch、分批结算 GAS epoch | 无协议保证的 Keeper 奖励 |
 | DAO / `flon` 系统权限 | 治理执行 | 设置安全参数、处理全网事故、逐步扩大 Active BP 法定数量 | 不直接领取上述奖励 |
 
 Active 和 Standby 是协议根据快照自动产生的运行状态，不是 Candidate 自己选择的注册类型。当前目标为最多 21 个 Active BP 和 30 个 Standby BP；启动阶段 Active BP 法定数量可在 3 至 21 之间逐步扩大。
@@ -51,7 +54,7 @@ Standby BP
   -> Candidate 质押并注册
   -> Voter 锁仓并投票
   -> 到达 schedule_start，协议自动更新 Active schedule
-  -> 每 6 小时执行基础奖励和 GAS 奖励结算
+  -> 每 1 小时封存基础奖励和 GAS 奖励会计数据
   -> BP、Standby、Voter 各自领取已结算奖励
 ```
 
@@ -142,9 +145,9 @@ fucli -u "$RPC_URL" push action gas.reward init '["8,FLON"]' -p gas.reward@activ
 
 至少核对以下 inline-action 能力，同时保留各账户 owner 恢复权限：
 
-- `flon` 可以调用 `flon.token`、`voter.reward` 和 `gas.reward` 所需 inline action；
+- `flon` 可以调用 `flon.token` 和 `voter.reward` 所需 inline action；
 - `flon.vote` 和 `flon.stake` 允许系统合约按协议返还锁定资产；
-- `flon.gas` 允许系统合约把已结算 GAS 奖励转入 `gas.reward`；
+- `flon.gas` 的 `active` 权限允许 `flon` 在 BP 主动领取时把已结算 GAS 奖励直接支付给受益 BP；
 - `voter.reward` 和 `gas.reward` 可以把用户主动领取的 FLON 转出；
 - GLON issuer 为 `flon`，GLON 的用户间普通转账受到协议限制。
 
@@ -167,10 +170,10 @@ fucli -u "$RPC_URL" push action flon setprodcfg \
   '["<SCHEDULE_START_UTC>","<REWARD_EPOCH_START_UTC>","0.00000000 FLON"]' \
   -p flon@active
 
-# 6 小时 epoch；95% 用于 Active 健康统计/全网事故判定；
+# 1 小时 epoch；95% 用于 Active 健康统计/全网事故判定；
 # GAS 的 10% 进入节点池，其中 Active 80%、Standby 最多 20%。
 fucli -u "$RPC_URL" push action flon setgasrwcfg \
-  '[true,43200,9500,1000,8000]' -p flon@active
+  '[true,7200,9500,1000,8000]' -p flon@active
 ```
 
 规则：
@@ -190,8 +193,8 @@ fucli -u "$RPC_URL" push action flon setgasrwcfg \
 2. 多个 Voter `addvote -> voteproducer`，验证同一账户总票权不因多选而放大；
 3. 到下一个 epoch 后，排名和 Active schedule 生效；
 4. Active BP 正常出块，确认 Standby Epoch 快照与候补排名正确；
-5. `closeepoch` 后 BP/Voter 基础奖励可领取；
-6. GAS epoch 完成 `beginsettle -> settlenext -> finalizeepoch` 后节点可领取；
+5. `onblock` 将基础奖励 Epoch 推进至 `SEALED` 后，BP/Voter 奖励可领取；
+6. `onblock` 完成 GAS Epoch 的有界结算后，节点 GAS 奖励可领取；
 7. `subvote` 立即收回并销毁等量 GLON，等待期后退回 FLON；
 8. 模拟低可用率、suspended、冷却和 `resumeprod` probation；
 9. 模拟全网事故，确认进入 incident hold，不能自动误罚多数 BP；
@@ -295,23 +298,18 @@ Active BP 必须运行 producer/signature 组件并按 schedule 出块。基础�
 
 ### 7.2 基础挖矿奖励领取
 
-Keeper 关闭 epoch 后，BP 自留部分进入 `flon::producers.unclaimed_rewards`。BP 主动领取：
+`onblock` 自动封存 epoch 后，BP 自留部分进入 `flon::producers.unclaimed_rewards`。BP 本人或第三方可触发统一领取：
 
 ```bash
 fucli -u "$RPC_URL" push action flon claimrewards \
-  '["<BP_ACCOUNT>"]' -p <BP_ACCOUNT>@active
+  '["<CALLER>","<BP_ACCOUNT>",24]' -p <CALLER>@active
 ```
 
 未领取奖励会继续累计，不会因错过一个 epoch 丢失。
 
 ### 7.3 GAS Active 奖励领取
 
-GAS epoch 完成最终结算后，Active BP 到另一个合约领取：
-
-```bash
-fucli -u "$RPC_URL" push action gas.reward claimrewards \
-  '["<BP_ACCOUNT>"]' -p <BP_ACCOUNT>@active
-```
+GAS epoch 由 `onblock` 自动完成有界内部结算。BP 使用上一节同一个 `flon::claimrewards(caller, producer, max_steps)` 同时拉取基础和 GAS 奖励，不再要求用户直接调用 `gas.reward`。
 
 GAS Active 池由当前 schedule 中实际出过块的 BP 参与，严格按实际出块数比例分配，没有等额基础服务奖。`active_min_bp` 用于健康状态和全网事故判定；它不会把仍有实际出块、但低于该门槛的 Active BP 从 GAS 分配计算中直接删除。
 
@@ -332,11 +330,11 @@ Standby 节点应保持完整同步和可立即接替状态，但不签名生产
 
 当前版本不对 Standby 声称在线能力作虚假判断。注册有效、自质押达标、未处于 `suspended` 状态且进入候补排名的账户，才可写入该 GAS epoch 的 `gasnodestats` Standby 快照，并获得该 epoch 的 Standby 奖励资格。该资格表示候补席位身份，不构成节点在线、独立同步或可随时出块的证明。未来应以共识可验证的真实测试 slot 或等效机制替代。
 
-结算完成后领取：
+结算完成后使用统一入口领取：
 
 ```bash
-fucli -u "$RPC_URL" push action gas.reward claimrewards \
-  '["<BP_ACCOUNT>"]' -p <BP_ACCOUNT>@active
+fucli -u "$RPC_URL" push action flon claimrewards \
+  '["<CALLER>","<BP_ACCOUNT>",24]' -p <CALLER>@active
 ```
 
 Standby 池按最多 30 席归一化。未满 30 个合格 Standby 时，空缺份额不会被少数 Standby 瓜分。
@@ -385,7 +383,7 @@ fucli -u "$RPC_URL" push action flon subvote \
 
 `subvote` 会立即把等量 GLON 转回系统并销毁，票权变化排队到下一 epoch；FLON 进入待退款状态。当前实现同一账户只能有一笔待退款。
 
-等待期成熟后可由任何 Keeper 触发，资金只能退回 owner：
+等待期成熟后可由 owner 或任何第三方触发，资金只能退回 owner：
 
 ```bash
 fucli -u "$RPC_URL" push action flon voterefund '["<VOTER>"]'
@@ -395,138 +393,47 @@ fucli -u "$RPC_URL" push action flon voterefund '["<VOTER>"]'
 
 ### 9.4 领取 Voter 奖励
 
-BP 在注册时设置的 `reward_shared_ratio` 决定其基础奖励中分享给 Voter 的比例。`flon::closeepoch` 把该份额转入 `voter.reward`，并按奖励产生 epoch 的历史有效票权记账。Voter 主动领取：
+BP 在注册时设置的 `reward_shared_ratio` 决定其基础奖励中分享给 Voter 的比例。`onblock` 的有界封存状态机把该份额转入 `voter.reward`，并按奖励产生 epoch 的历史有效票权记账。Voter 本人或第三方可触发领取：
 
 ```bash
 fucli -u "$RPC_URL" push action voter.reward claimrewards \
-  '["<VOTER>"]' -p <VOTER>@active
+  '["<CALLER>","<VOTER>",24]' -p <CALLER>@active
 ```
 
 领取时间不改变归属；延后领取会累计。Voter 不通过 `gas.reward` 领取投票分享奖励。
 
-## 10. Keeper：每 6 小时结算流程
+## 10. `onblock` 自动封存与结算流程
 
-建议基金会运行一个主 Keeper，并由至少两个独立 BP/社区 Keeper 监控和补单。所有 permissionless action 都必须设计成幂等检查后再发送，不能盲目重复交易。
+当前版本不再公开 `closeepoch`、`beginsettle`、`settlenext`、`finalizeepoch`，也不依赖 Keeper 推进协议状态。
 
-### 10.1 基础挖矿和 Voter 分享奖励
-
-基础 epoch 从 `reward_epoch_start` 起每 6 小时编号，必须严格顺序关闭：
-
-```bash
-fucli -u "$RPC_URL" push action flon closeepoch '[<BASE_EPOCH_ID>]'
-```
-
-该 action：
-
-- 固化 BP 绩效状态和停权结果；
-- 把 BP 自留部分记入 `producers.unclaimed_rewards`；
-- 把 Voter 分享池转入 `voter.reward`；
-- 应用下一 epoch 的票权变化；
-- 推进 `rewardepoch.next_epoch_to_close`。
-
-`closeepoch` 不由 `onblock` 自动执行。`onblock` 只记录逐块奖励和确定性出块统计；完整结算包含表扫描、绩效判定、inline transfer 和待生效票权更新，必须由链下 Keeper 发起 permissionless 交易，避免结算失败或 CPU 超限阻塞共识出块。
-
-#### 10.1.1 日常执行频率和时间窗口
-
-基础 epoch 固定为 6 小时。Keeper 不需要每块发送交易，推荐采用以下运行节奏：
-
-| 项目 | 推荐值 | 说明 |
-| --- | --- | --- |
-| 常态检查频率 | 距边界超过 30 分钟时每 15 分钟 | 校准链上时间、`next_epoch_to_close` 和预测边界；不需要持续每分钟查询 |
-| 边界预热频率 | 距边界 30–10 分钟时每 5 分钟 | 提前发现 RPC、钱包或 Keeper 故障 |
-| 边界窗口频率 | 距边界不足 10 分钟，直到成功关闭前每 1 分钟 | 只在接近结算窗口或已经发生积压时使用高频检查 |
-| 正常提交窗口 | epoch 边界后 1–5 分钟 | 给新区块和 RPC 留出传播时间，然后关闭刚结束的 epoch |
-| 延迟告警 | 边界后 15 分钟仍未关闭 | 主 Keeper 告警，由备用 Keeper 复核并补单 |
-| 严重告警 | 落后 1 个完整 epoch，即超过约 6 小时 | 立即按顺序追赶，并检查 Keeper、钱包、RPC 和合约执行日志 |
-| 高可用配置 | 1 个主 Keeper，加至少 2 个独立监控/备用 Keeper | 备用 Keeper 必须先读链上状态，不能按本地定时器盲发 |
-
-每轮执行前都必须读取：
-
-```bash
-fucli -u "$RPC_URL" get info
-fucli -u "$RPC_URL" get table flon flon rewardepoch
-```
-
-只有同时满足以下条件才提交：
-
-1. RPC chain ID 与目标网络配置完全一致；
-2. 链头和 LIB 正常推进；
-3. `next_epoch_to_close` 对应的 epoch 已结束；
-4. Keeper 钱包和签名权限属于目标网络；
-5. 当前没有另一笔相同 epoch 的待确认交易。
-
-提交后至少等待交易进入不可逆区块，并重新读取 `rewardepoch`。只有观察到 `next_epoch_to_close` 增加 1，才能认为本次关闭完成。交易广播成功或 RPC 返回 HTTP 200 都不能单独作为完成依据。
-
-#### 10.1.2 错过一次或多次的处理
-
-错过关闭窗口不会销毁基础挖矿奖励或 Voter 分享奖励。各 epoch 的奖励数据仍保留在独立 scope 中，之后可以补做；但延迟期间会产生以下影响：
-
-- BP 和 Voter 的奖励所有权尚未最终结算，暂时不能领取对应部分；
-- `pendingvote` / `votedeltas` 尚未激活，新的票权排名和 Active schedule 会延迟；
-- BP 绩效状态、停权和恢复判定延迟；
-- 未关闭 epoch 的表数据继续占用链上 RAM；
-- 监控和 DApp 展示的“待生效”状态会持续存在。
-
-如果只错过一次，直接读取 `rewardepoch.next_epoch_to_close`，确认该 epoch 已结束后提交一次 `closeepoch` 即可。
-
-如果错过多次，不能跳到最新 epoch，也不能并发提交多个 `closeepoch`。合约要求严格顺序关闭，安全追赶流程是：
-
-1. 读取链上的 `next_epoch_to_close`，把它作为唯一可信的下一个 epoch ID；
-2. 提交 `closeepoch(next_epoch_to_close)`；
-3. 等待不可逆，并确认链上值恰好增加 1；
-4. 重新读取状态；如果新的 `next_epoch_to_close` 也已经结束，继续下一轮；
-5. 追到当前尚未结束的 epoch 后停止。
-
-不要预先生成一串交易，也不要依赖本地缓存的 epoch ID。两名 Keeper 同时补单时，后到交易通常会因 `reward epochs must be closed sequentially` 被拒绝；这是安全拒绝，但会浪费交易资源并制造无效告警。
-
-长时间积压通常不会把多个 epoch 合并成一笔超大结算：每次 action 仍只处理一个 epoch。因此可以顺序追赶，奖励不会因为跨过多个 6 小时窗口而丢失。不过，每个 epoch 本身仍可能包含较多 BP 绩效和奖励行；若单笔交易出现 CPU/NET 超限，必须保留精确错误和表状态，停止盲目重试，并评估是否需要通过合约升级把结算改为有界、可续跑的分批状态机。
-
-#### 10.1.3 Keeper 自动化逻辑
-
-推荐的 Keeper 循环是“查询—判断—提交—等待不可逆—复核”，而不是固定每 6 小时无条件发送：
+每个 1 小时 Epoch 到期后，`onblock` 以严格有界的步骤推进：
 
 ```text
-根据链上时间计算下一边界
-  ├─ 距边界 > 30 分钟：每 15 分钟校准一次
-  ├─ 距边界 30–10 分钟：每 5 分钟检查一次
-  └─ 距边界 < 10 分钟或已有积压：每 1 分钟检查
-       ├─ 链未同步 / chain ID 不匹配：停止并告警
-       ├─ next_epoch_to_close 尚未结束：等待下一轮
-       └─ 已结束：提交 closeepoch(next_epoch_to_close)
-       ├─ 等待不可逆
-       ├─ 验证 next_epoch_to_close == 原值 + 1
-       └─ 如仍有积压，串行处理下一 epoch
+OPEN
+  -> ENDING：封存本 Epoch 的出块与 GAS 统计
+  -> APPLYING_DELTAS：逐块处理绩效、奖励行和历史票权边界
+  -> SEALED：该 Epoch 可领取，并开始处理下一个已结束 Epoch
 ```
 
-进程启动、重启或网络恢复时应立即执行一次完整检查，然后再进入上述自适应周期。链头/LIB、节点进程和 P2P 健康监控可以独立保持较高频率，但不需要因此每分钟查询或提交 `closeepoch`。
+基础奖励与 GAS 奖励共用同一次 `get_producer_slot_stats` 采样。每个区块只推进固定数量的行；即使积压多个 Epoch，也不会在单个区块内做无界全表扫描。链下服务只负责只读监控和告警，不发送结算交易。
 
-基础 `closeepoch` 与 GAS `beginsettle/settlenext/finalizeepoch` 是两套独立编号和状态机。基础 epoch 追赶完成不等于 GAS epoch 已结算，Keeper 必须分别监控，严禁混用 epoch ID。
+应监控：
 
-### 10.2 GAS 节点奖励
+- `rewardseal.phase`、`stage`、`cursor` 是否持续推进；
+- `rewardepoch.next_epoch_to_close` 是否最终跨过已结束的 Epoch；
+- `gasautostate.next_epoch` 和 `gassettles` 是否持续推进；
+- 长时间不推进时的链头、LIB、节点日志和精确合约错误。
 
-GAS epoch 使用绝对 block slot 除以 `epoch_slots` 的编号方式，与基础 epoch 编号不要混用。
+错过边界不会丢失奖励，也不会把 Epoch 拉长；结束时间仍由链上 slot 确定。恢复出块后，后续 `onblock` 会按顺序继续处理积压状态。不得通过外部交易跳过 Epoch 或重写游标。
 
-```bash
-# 1. 创建已结束 epoch 的结算记录
-fucli -u "$RPC_URL" push action flon beginsettle '[<GAS_EPOCH_ID>]'
-
-# 2. 第一阶段扫描资格；每次最多 10 行，重复直到 phase 从 1 变化
-fucli -u "$RPC_URL" push action flon settlenext '[<GAS_EPOCH_ID>,10]'
-
-# 3. 第二阶段分配并写入 gas.reward；继续重复直到 phase == 3
-fucli -u "$RPC_URL" push action flon settlenext '[<GAS_EPOCH_ID>,10]'
-
-# 4. 核对 allocated == pool 后最终确认
-fucli -u "$RPC_URL" push action flon finalizeepoch '[<GAS_EPOCH_ID>]'
-```
-
-如果 `gassettles.phase == 4`，表示检测到全网事故，普通 Keeper 必须停止。DAO/系统权限完成链下事故复核后选择：
+全网事故判断仍可进入 incident 状态。DAO/系统权限完成链下复核后，可调用：
 
 ```bash
-# proceed=true：继续资助和分配；false：该 epoch 不发放
 fucli -u "$RPC_URL" push action flon resolveincdt \
   '[<GAS_EPOCH_ID>,<true|false>]' -p flon@active
 ```
+
+其中 `true` 表示继续该 Epoch 的 GAS 分配，`false` 表示该 Epoch 不发放。
 
 ## 11. 常用链上检查
 
@@ -558,8 +465,9 @@ fucli -u "$RPC_URL" get table flon flon gasepochcfg
 fucli -u "$RPC_URL" get table flon <GAS_EPOCH_ID> gasnodestats
 fucli -u "$RPC_URL" get table flon flon gassettles
 
-# 节点 GAS 待领余额
-fucli -u "$RPC_URL" get table gas.reward gas.reward noderewards
+# 节点按 Epoch 封存的基础与 GAS 待领明细
+fucli -u "$RPC_URL" get table flon <PRODUCER> prodclaims
+fucli -u "$RPC_URL" get table flon <PRODUCER> gasclaims
 
 # Voter 奖励状态
 fucli -u "$RPC_URL" get table voter.reward voter.reward voters
@@ -577,15 +485,15 @@ fucli -u "$RPC_URL" get table voter.reward voter.reward voters
 - Active BP、Standby BP、Voter 三类 `claimrewards` 均实测到账；
 - addvote、voteproducer、subvote、voterefund 全流程完成；
 - suspended、resumeprod、probation 和 incident hold 已在测试链演练；
-- Keeper、监控、告警、值班和事故沟通渠道均已运行。
+- 只读监控、告警、值班和事故沟通渠道均已运行。
 
 ## 13. 不应执行的操作
 
 - 不要把 BP 称为 Supernode；使用 Block Producer（BP）、Active BP、Standby BP；
 - 不要手工指定某账户为 Standby，角色应由 epoch 快照和排名产生；
 - 不要让 `initial_block_reward` 接受非零值；基础发行曲线是协议固定值；
-- 不要在 `onblock` 中做完整 epoch 结算；结算由 permissionless 交易触发；
-- 不要在未核对 phase/cursor 的情况下并发发送多笔 `settlenext`；
-- 不要把 `flon::claimrewards`、`gas.reward::claimrewards` 和 `voter.reward::claimrewards` 混用；
+- 不要重新加入外部 `closeepoch/beginsettle/settlenext/finalizeepoch` 正确性依赖；
+- 不要通过外部交易篡改自动封存的 phase/cursor；
+- 新奖励统一使用 `flon::claimrewards`；`gas.reward::claimrewards` 只处理升级前已存在的遗留余额，Voter 使用 `voter.reward::claimrewards`；
 - 不要把测试链 chain ID、账户或 endpoint 复制到主网脚本；
 - 不要以 HTTP 200、容器运行中或交易已广播作为上线成功证明，必须检查链上最终状态和实际到账。

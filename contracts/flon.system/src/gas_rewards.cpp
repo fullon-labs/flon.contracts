@@ -37,14 +37,18 @@ void system_contract::setgasrwcfg(bool enabled, uint32_t epoch_slots,
    gas_reward_config_singleton config(get_self(), get_self().value);
    if (config.exists()) {
       const auto old = config.get();
-      check(epoch_slots == old.epoch_slots,
-            "epoch slot count is immutable after gas rewards are configured");
       if (old.enabled) {
          check(!enabled, "disable gas rewards before changing configuration");
          check(epoch_slots == old.epoch_slots && active_min_bp == old.active_min_bp &&
                pool_bp == old.pool_bp &&
                active_share_bp == old.active_share_bp,
                "configuration cannot change while enabled");
+      } else if (enabled && epoch_slots != old.epoch_slots) {
+         // A disabled configuration may move to the governed hourly cadence.
+         // Historical epochs retain their own gasepochcfg rows; the new
+         // absolute-slot epoch numbering starts strictly after re-enablement.
+         check(epoch_slots == reward_epoch_slots,
+               "gas reward epoch migration must use the one-hour cadence");
       }
    }
 
@@ -55,6 +59,12 @@ void system_contract::setgasrwcfg(bool enabled, uint32_t epoch_slots,
                           pool_bp, active_share_bp, 0,
                           0, 0, gas_accounting_version, first_reward_epoch};
    config.set(next, get_self());
+   gas_auto_state_singleton auto_state(get_self(), get_self().value);
+   if (enabled) {
+      auto_state.set({first_reward_epoch, true}, get_self());
+   } else if (auto_state.exists()) {
+      auto_state.remove();
+   }
 }
 
 void system_contract::ensure_gas_epoch_roles(uint64_t epoch_id,
@@ -167,31 +177,37 @@ void system_contract::accumulate_gas_node_stats(uint32_t current_slot) {
       }
    }
 
-   uint32_t from = config.last_accounted_slot + 1;
-   while (from <= current_slot) {
-      const uint64_t epoch_id = from / config.epoch_slots;
-      const uint64_t epoch_last = (epoch_id + 1) * uint64_t(config.epoch_slots) - 1;
-      const uint32_t to = static_cast<uint32_t>(std::min<uint64_t>(current_slot, epoch_last));
-      if (epoch_id >= first_reward_epoch) {
-         ensure_gas_epoch_roles(epoch_id, config);
-         gas_node_stats stats(get_self(), epoch_id);
-         for (const auto& item : eosio::get_producer_slot_stats(from, to)) {
-            auto stat = stats.find(item.producer.value);
-            if (stat == stats.end()) continue;
-            stats.modify(stat, eosio::same_payer, [&](auto& row) {
-               row.expected += item.expected; row.produced += item.produced;
-               row.missed += item.missed;
-               row.longest_missed = std::max(row.longest_missed, item.longest_missed_streak);
-            });
-         }
-      }
-      if (to == std::numeric_limits<uint32_t>::max()) break;
-      from = to + 1;
-   }
-
    config.last_accounted_slot = current_slot;
    config.last_metered_gas_value = totals.total_gas_value_flon;
    config_table.set(config, get_self());
+}
+
+void system_contract::accumulate_gas_slot_stats(
+      uint32_t from_slot, uint32_t to_slot,
+      const std::vector<eosio::producer_slot_stats>& samples) {
+   gas_reward_config_singleton config_table(get_self(), get_self().value);
+   if (!config_table.exists()) return;
+   const auto config = config_table.get();
+   if (!config.enabled || !config.first_reward_epoch.has_value()) return;
+
+   const uint64_t epoch_id = uint64_t(from_slot) / config.epoch_slots;
+   check(uint64_t(to_slot) / config.epoch_slots == epoch_id,
+         "shared slot-stat sample crosses a GAS epoch boundary");
+   if (epoch_id < config.first_reward_epoch.value()) return;
+
+   ensure_gas_epoch_roles(epoch_id, config);
+   gas_node_stats stats(get_self(), epoch_id);
+   for (const auto& item : samples) {
+      auto stat = stats.find(item.producer.value);
+      if (stat == stats.end()) continue;
+      stats.modify(stat, eosio::same_payer, [&](auto& row) {
+         row.expected += item.expected;
+         row.produced += item.produced;
+         row.missed += item.missed;
+         row.longest_missed = std::max(row.longest_missed,
+                                       item.longest_missed_streak);
+      });
+   }
 }
 
 void system_contract::beginsettle(uint64_t epoch_id) {
@@ -202,7 +218,14 @@ void system_contract::beginsettle(uint64_t epoch_id) {
    gas_epoch_configs epoch_configs(get_self(), get_self().value);
    const auto epoch_config = epoch_configs.get(epoch_id, "missing epoch reward configuration");
    gas_epoch_meters meters(get_self(), get_self().value);
-   auto meter = meters.require_find(epoch_id, "epoch gas has not been metered");
+   auto meter = meters.find(epoch_id);
+   if (meter == meters.end()) {
+      meters.emplace(get_self(), [&](auto& row) {
+         row.epoch_id = epoch_id;
+         row.gas_value = 0;
+      });
+      meter = meters.find(epoch_id);
+   }
    gas_settlements settlements(get_self(), get_self().value);
    check(settlements.find(epoch_id) == settlements.end(), "settlement already started");
    const auto sym = core_symbol();
@@ -286,19 +309,11 @@ void system_contract::settlenext(uint64_t epoch_id, uint16_t max_rows) {
 
       settlement = settlements.find(epoch_id);
       if (settlement->incident_hold) return;
-      flon::gas_reward::openepoch_action("gas.reward"_n, {{get_self(), active_permission}})
-         .send(epoch_id, settlement->pool);
-      if (settlement->pool.amount > 0) {
-         eosio::token::transfer_action(token_account, {{gas_account, active_permission}})
-            .send(gas_account, "gas.reward"_n, settlement->pool, "gas-reward:" + std::to_string(epoch_id));
-      }
       settlements.modify(settlement, eosio::same_payer, [&](auto& row) { row.funded = true; });
       return;
    }
 
    check(settlement->funded, "settlement is not funded");
-   std::vector<name> owners;
-   std::vector<asset> quantities;
    name cursor = settlement->cursor;
    auto hash = settlement->allocation_hash;
    int64_t active_allocated = settlement->active_allocated.amount;
@@ -335,16 +350,17 @@ void system_contract::settlenext(uint64_t epoch_id, uint16_t max_rows) {
       }
       if (amount > 0) {
          const asset quantity(amount, core_symbol());
-         owners.push_back(it->owner); quantities.push_back(quantity);
+         gas_epoch_claims_table claims(get_self(), it->owner.value);
+         check(claims.find(epoch_id) == claims.end(), "duplicate GAS epoch claim row");
+         claims.emplace(get_self(), [&](auto& row) {
+            row.epoch_id = epoch_id;
+            row.quantity = quantity;
+         });
          const auto packed = eosio::pack(std::make_tuple(hash, it->owner, quantity));
          hash = eosio::sha256(packed.data(), packed.size());
          stats.modify(it, eosio::same_payer, [&](auto& row) { row.allocated = quantity; });
       }
       ++it;
-   }
-   if (!owners.empty()) {
-      flon::gas_reward::creditbatch_action("gas.reward"_n, {{get_self(), active_permission}})
-         .send(epoch_id, owners, quantities);
    }
    const bool done = it == stats.end();
    settlement = settlements.find(epoch_id);
@@ -369,12 +385,6 @@ void system_contract::resolveincdt(uint64_t epoch_id, bool proceed) {
       });
       return;
    }
-   flon::gas_reward::openepoch_action("gas.reward"_n, {{get_self(), active_permission}})
-      .send(epoch_id, settlement->pool);
-   if (settlement->pool.amount > 0) {
-      eosio::token::transfer_action(token_account, {{gas_account, active_permission}})
-         .send(gas_account, "gas.reward"_n, settlement->pool, "gas-reward:" + std::to_string(epoch_id));
-   }
    settlements.modify(settlement, eosio::same_payer, [&](auto& row) {
       row.phase = 2; row.incident_hold = false; row.funded = true;
    });
@@ -386,9 +396,51 @@ void system_contract::finalizeepoch(uint64_t epoch_id) {
    check(settlement->phase == 3 && !settlement->finalized, "settlement allocation incomplete");
    check(settlement->active_allocated == settlement->active_pool &&
          settlement->standby_allocated == settlement->standby_pool, "allocation total mismatch");
-   flon::gas_reward::finalize_action("gas.reward"_n, {{get_self(), active_permission}})
-      .send(epoch_id, settlement->allocation_hash);
    settlements.modify(settlement, eosio::same_payer, [&](auto& row) { row.finalized = true; });
+}
+
+void system_contract::advance_gas_settlement(uint32_t current_slot) {
+   gas_reward_config_singleton config_table(get_self(), get_self().value);
+   if (!config_table.exists()) return;
+   const auto config = config_table.get();
+   if (!config.enabled || !config.first_reward_epoch.has_value()) return;
+
+   gas_auto_state_singleton auto_state_table(get_self(), get_self().value);
+   auto auto_state = auto_state_table.exists() ? auto_state_table.get() : gas_auto_state{};
+   if (!auto_state.initialized) {
+      auto_state.next_epoch = config.first_reward_epoch.value();
+      auto_state.initialized = true;
+      auto_state_table.set(auto_state, get_self());
+   }
+
+   const uint64_t current_epoch = uint64_t(current_slot) / config.epoch_slots;
+   if (auto_state.next_epoch >= current_epoch) return;
+
+   gas_settlements settlements(get_self(), get_self().value);
+   auto settlement = settlements.find(auto_state.next_epoch);
+   if (settlement == settlements.end()) {
+      beginsettle(auto_state.next_epoch);
+      return;
+   }
+   if (settlement->finalized) {
+      ++auto_state.next_epoch;
+      auto_state_table.set(auto_state, get_self());
+      return;
+   }
+   if (settlement->phase == 4 && settlement->incident_hold) {
+      // A network-wide incident must not stall all later epochs. Proceeding
+      // preserves service rewards while the performance path separately avoids
+      // treating the incident as an individual producer offence.
+      resolveincdt(auto_state.next_epoch, true);
+      return;
+   }
+   if (settlement->phase == 1 || settlement->phase == 2) {
+      settlenext(auto_state.next_epoch, max_settle_rows);
+      return;
+   }
+   if (settlement->phase == 3) {
+      finalizeepoch(auto_state.next_epoch);
+   }
 }
 
 } // namespace eosiosystem

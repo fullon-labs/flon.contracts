@@ -225,38 +225,75 @@ void voter_reward::votealloc(const name& voter,
    }
 }
 
-void voter_reward::claimrewards(const name& voter) {
+void voter_reward::claimrewards(const name& caller, const name& voter, uint16_t max_steps) {
    check_init();
-   require_auth( voter );
+   require_auth(caller);
+   CHECK(max_steps > 0, "max_steps must be positive")
    claim_rewards(voter);
 }
 
-void voter_reward::closeepoch(uint64_t epoch_id) {
+void voter_reward::sealepoch(uint64_t epoch_id, uint16_t max_steps) {
    check_init();
    require_auth(SYSTEM_CONTRACT);
+   CHECK(max_steps > 0 && max_steps <= 30, "max_steps must be between 1 and 30")
 
-   auto state = _epoch_state_tbl.exists() ? _epoch_state_tbl.get() : epoch_state{};
-   CHECK(epoch_id == state.next_epoch_to_close, "reward epochs must be closed sequentially")
-   epoch_index::table checkpoint(get_self(), epoch_id + 1);
-   for (auto prod_itr = _producer_tbl.begin(); prod_itr != _producer_tbl.end(); ++prod_itr) {
-      checkpoint.emplace(get_self(), [&](auto& row) {
-         row.producer = prod_itr->owner;
-         row.rewards_per_vote = prod_itr->rewards_per_vote;
-      });
+   auto epoch_state_value = _epoch_state_tbl.exists() ? _epoch_state_tbl.get() : epoch_state{};
+   CHECK(epoch_id == epoch_state_value.next_epoch_to_close,
+         "reward epochs must be sealed sequentially")
+
+   auto seal = _seal_state_tbl.exists() ? _seal_state_tbl.get() : seal_state{epoch_id, 1, name{}};
+   CHECK(seal.epoch_id == epoch_id, "another reward epoch is being sealed")
+   uint16_t processed = 0;
+
+   if (seal.phase == 1) {
+      epoch_index::table checkpoint(get_self(), epoch_id + 1);
+      auto producer_itr = seal.cursor.value
+         ? _producer_tbl.upper_bound(seal.cursor.value) : _producer_tbl.begin();
+      while (producer_itr != _producer_tbl.end() && processed < max_steps) {
+         auto checkpoint_itr = checkpoint.find(producer_itr->owner.value);
+         if (checkpoint_itr == checkpoint.end()) {
+            checkpoint.emplace(get_self(), [&](auto& row) {
+               row.producer = producer_itr->owner;
+               row.rewards_per_vote = producer_itr->rewards_per_vote;
+               row.votes = producer_itr->votes;
+            });
+         } else if (!checkpoint_itr->votes.has_value()) {
+            checkpoint.modify(checkpoint_itr, same_payer, [&](auto& row) {
+               row.votes = producer_itr->votes;
+            });
+         }
+         seal.cursor = producer_itr->owner;
+         ++producer_itr;
+         ++processed;
+      }
+      if (producer_itr == _producer_tbl.end()) {
+         seal.phase = 2;
+         seal.cursor = name{};
+      }
    }
 
-   for (auto delta_itr = _producer_delta_tbl.begin(); delta_itr != _producer_delta_tbl.end();) {
-      auto prod_itr = _producer_tbl.find(delta_itr->producer.value);
-      CHECK(prod_itr != _producer_tbl.end(), "producer not found")
-      _producer_tbl.modify(prod_itr, same_payer, [&](auto& p) {
-         p.votes += delta_itr->votes_delta;
-         CHECK(p.votes >= 0, "producer votes can not be negative")
-      });
-      delta_itr = _producer_delta_tbl.erase(delta_itr);
+   if (seal.phase == 2 && processed < max_steps) {
+      auto delta_itr = seal.cursor.value
+         ? _producer_delta_tbl.upper_bound(seal.cursor.value) : _producer_delta_tbl.begin();
+      while (delta_itr != _producer_delta_tbl.end() && processed < max_steps) {
+         auto prod_itr = _producer_tbl.find(delta_itr->producer.value);
+         CHECK(prod_itr != _producer_tbl.end(), "producer not found")
+         _producer_tbl.modify(prod_itr, same_payer, [&](auto& producer) {
+            producer.votes += delta_itr->votes_delta;
+            CHECK(producer.votes >= 0, "producer votes can not be negative")
+         });
+         delta_itr = _producer_delta_tbl.erase(delta_itr);
+         ++processed;
+      }
+      if (delta_itr == _producer_delta_tbl.end()) {
+         epoch_state_value.next_epoch_to_close += 1;
+         _epoch_state_tbl.set(epoch_state_value, get_self());
+         if (_seal_state_tbl.exists()) _seal_state_tbl.remove();
+         return;
+      }
    }
 
-   state.next_epoch_to_close += 1;
-   _epoch_state_tbl.set(state, get_self());
+   _seal_state_tbl.set(seal, get_self());
 }
 
 void voter_reward::claim_rewards( const name& voter ) {
@@ -264,7 +301,7 @@ void voter_reward::claim_rewards( const name& voter ) {
    auto voter_itr = _voter_tbl.find(voter.value);
    check(voter_itr != _voter_tbl.end(), "voter info not found");
 
-   _voter_tbl.modify(voter_itr, voter, [&]( auto& v) {
+   _voter_tbl.modify(voter_itr, same_payer, [&]( auto& v) {
       if (voter_itr->votes > 0) {
          const int64_t allocated_weight = v.producers.empty() ? 0 : v.votes / static_cast<int64_t>(v.producers.size());
          std::vector<name> producer_names;
@@ -285,10 +322,7 @@ void voter_reward::claim_rewards( const name& voter ) {
 
 void voter_reward::claimfor(const name& claimer, const name& voter) {
    check_init();
-   // Keep the legacy action for ABI compatibility, but require a true
-   // beneficiary-authorized pull claim instead of a relayer-triggered payout.
-   CHECK(claimer == voter, "claimer must be the reward beneficiary")
-   require_auth(voter);
+   require_auth(claimer);
    claim_rewards(voter);
 }
 

@@ -901,11 +901,6 @@ public:
             ("initial_block_reward", core_sym::from_string("0.0000")) );
    }
 
-   action_result closeepoch( uint64_t epoch_id ) {
-      return push_action(config::system_account_name, "closeepoch"_n,
-                         mvo()("epoch_id", epoch_id));
-   }
-
    uint32_t last_block_time() const {
       return time_point_sec( control->head().block_time() ).sec_since_epoch();
    }

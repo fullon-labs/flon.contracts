@@ -27,12 +27,10 @@ namespace eosiosystem {
    using eosio::singleton;
    using std::to_string;
 
-   static uint64_t next_vote_epoch(const eosio_global_state& state) {
+   uint64_t system_contract::next_vote_epoch() const {
       const auto now = current_time_point();
-      if (state.reward_started_time == time_point() || now < state.reward_started_time) return 0;
-      const block_timestamp now_slot(now);
-      const block_timestamp start_slot(state.reward_started_time);
-      return (now_slot.slot - start_slot.slot) / reward_epoch_slots + 1;
+      if (_gstate.reward_started_time == time_point() || now < _gstate.reward_started_time) return 0;
+      return current_reward_epoch(now) + 1;
    }
 
    static asset default_min_bp_self_stake(const symbol& core) {
@@ -447,7 +445,7 @@ namespace eosiosystem {
       auto now = current_time_point();
       // CHECK( time_point(voter_itr->last_unvoted_time) + seconds(vote_interval_sec) < now, "Voter can only vote or subvote once a day" )
 
-      const uint64_t activation_epoch = next_vote_epoch(_gstate);
+      const uint64_t activation_epoch = next_vote_epoch();
       queue_vote_change(voter_name, target_votes, producers, activation_epoch);
 
       flon::voter_reward::voteproducer_action voteproducer_act{ voter_reward_account, { {get_self(), active_permission}, {voter_name, active_permission} } };
@@ -495,7 +493,7 @@ namespace eosiosystem {
          voter_name, has_pending ? pending_itr->producers : voter_itr->producers,
          target_votes, has_pending);
       check(old_allocations != allocations, "producer vote allocations did not change");
-      const uint64_t activation_epoch = next_vote_epoch(_gstate);
+      const uint64_t activation_epoch = next_vote_epoch();
       update_pending_allocation_deltas(old_allocations, allocations);
 
       if (pending_itr == pending_votes.end()) {
@@ -760,7 +758,7 @@ namespace eosiosystem {
                                       ? voter_itr->votes : pending_itr->votes) + votes;
       const auto target_producers = pending_itr == pending_votes.end()
                                       ? voter_itr->producers : pending_itr->producers;
-      const uint64_t activation_epoch = next_vote_epoch(_gstate);
+      const uint64_t activation_epoch = next_vote_epoch();
       queue_vote_change(voter, target_votes, target_producers, activation_epoch);
 
       flon::voter_reward::addvote_action addvote_act{ voter_reward_account, { {get_self(), active_permission}, {voter, active_permission} } };
@@ -806,7 +804,7 @@ namespace eosiosystem {
       eosio::token::retire_action retire_glon_act{ token_account, { {get_self(), active_permission} } };
       retire_glon_act.send( glon_quantity, "retire governance receipt" );
 
-      const uint64_t activation_epoch = next_vote_epoch(_gstate);
+      const uint64_t activation_epoch = next_vote_epoch();
       queue_vote_change(voter, current_target_votes - votes, target_producers, activation_epoch);
 
       _voters.modify( voter_itr, same_payer, [&]( auto& v ) {

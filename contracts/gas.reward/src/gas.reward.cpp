@@ -92,6 +92,13 @@ void gas_reward::creditbatch(uint64_t epoch_id, const std::vector<name>& owners,
             row.allocated += quantities[i]; row.unclaimed += quantities[i];
          });
       }
+      owner_epoch_rewards owner_epochs(get_self(), owners[i].value);
+      eosio::check(owner_epochs.find(epoch_id) == owner_epochs.end(),
+                   "duplicate owner epoch reward");
+      owner_epochs.emplace(get_self(), [&](auto& row) {
+         row.epoch_id = epoch_id;
+         row.quantity = quantities[i];
+      });
       const auto packed = eosio::pack(std::make_tuple(hash, owners[i], quantities[i]));
       hash = eosio::sha256(packed.data(), packed.size());
       eosio::check(quantities[i].amount <= std::numeric_limits<int64_t>::max() - batch_total,
@@ -122,15 +129,29 @@ void gas_reward::finalize(uint64_t epoch_id, checksum256 allocation_hash) {
    epochs.modify(epoch, eosio::same_payer, [&](auto& row) { row.finalized = true; });
 }
 
-void gas_reward::claimrewards(name owner) {
-   require_auth(owner);
+void gas_reward::claimrewards(name caller, name owner, uint16_t max_steps) {
+   require_auth(caller);
+   eosio::check(max_steps > 0, "max_steps must be positive");
    auto state = get_global();
    node_rewards rewards(get_self(), get_self().value);
    auto reward = rewards.require_find(owner.value, "node reward not found");
-   eosio::check(reward->unclaimed.amount > 0, "no gas reward to claim");
-   const asset quantity = reward->unclaimed;
+   eosio::check(reward->unclaimed.amount > 0, "all rewards claimed");
+   owner_epoch_rewards owner_epochs(get_self(), owner.value);
+   asset quantity(0, state.core_symbol);
+   uint16_t processed = 0;
+   auto epoch_reward = owner_epochs.begin();
+   while (epoch_reward != owner_epochs.end() && processed < max_steps) {
+      quantity += epoch_reward->quantity;
+      epoch_reward = owner_epochs.erase(epoch_reward);
+      ++processed;
+   }
+   // Rows allocated by the pre-ownerepochs contract are a single legacy step.
+   if (processed == 0) quantity = reward->unclaimed;
+   eosio::check(quantity.amount > 0 && quantity <= reward->unclaimed,
+                "invalid GAS reward claim amount");
    rewards.modify(reward, eosio::same_payer, [&](auto& row) {
-      row.claimed += quantity; row.unclaimed.amount = 0;
+      row.claimed += quantity;
+      row.unclaimed -= quantity;
    });
    state.total_claimed += quantity;
    global_singleton(get_self(), get_self().value).set(state, get_self());

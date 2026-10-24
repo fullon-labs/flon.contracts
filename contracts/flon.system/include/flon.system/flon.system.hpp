@@ -429,7 +429,10 @@ namespace eosiosystem {
    };
    typedef eosio::multi_index<"bpstkrefund"_n, bp_stake_refund> bp_stake_refund_table;
 
-   static constexpr uint32_t reward_epoch_seconds = 6 * 60 * 60;
+   static constexpr uint32_t legacy_reward_epoch_slots = 6 * 60 * 60 * 2;
+   // New reward accounting is sealed hourly. Claim frequency is independent:
+   // a producer claiming daily consumes about 24 completed hourly records.
+   static constexpr uint32_t reward_epoch_seconds = 60 * 60;
    static constexpr uint32_t reward_epoch_slots = reward_epoch_seconds * 2;
    // Keep native schedule reconstruction in onblock tightly bounded. Four
    // minutes covers ordinary producer/network interruptions without allowing a
@@ -516,10 +519,42 @@ namespace eosiosystem {
    };
    typedef eosio::multi_index<"epochreward"_n, epoch_reward> epoch_rewards_table;
 
+   struct [[eosio::table, eosio::contract("flon.system")]] producer_epoch_claim {
+      uint64_t epoch_id = 0;
+      asset quantity;
+      uint64_t primary_key() const { return epoch_id; }
+   };
+   typedef eosio::multi_index<"prodclaims"_n, producer_epoch_claim>
+      producer_epoch_claims_table;
+
    struct [[eosio::table("rewardepoch"), eosio::contract("flon.system")]] reward_epoch_state {
       uint64_t next_epoch_to_close = 0;
    };
    typedef eosio::singleton<"rewardepoch"_n, reward_epoch_state> reward_epoch_singleton;
+
+   // A tail/version table rather than a reinterpretation of reward_started_time.
+   // Epochs below first_epoch_id retain the legacy six-hour schedule; epochs at
+   // and above it use the hourly schedule anchored at start_slot.
+   struct [[eosio::table("rewardcfgv2"), eosio::contract("flon.system")]] reward_epoch_config_v2 {
+      uint64_t first_epoch_id = 0;
+      uint32_t start_slot = 0;
+      uint32_t epoch_slots = reward_epoch_slots;
+   };
+   typedef eosio::singleton<"rewardcfgv2"_n, reward_epoch_config_v2>
+      reward_epoch_config_v2_singleton;
+
+   enum class reward_seal_phase : uint8_t { ending = 1, applying_deltas = 2, sealed = 3 };
+
+   struct [[eosio::table("rewardseal"), eosio::contract("flon.system")]] reward_seal_state {
+      uint64_t epoch_id = 0;
+      uint8_t  phase = static_cast<uint8_t>(reward_seal_phase::sealed);
+      uint8_t  stage = 0;
+      name     cursor;
+      uint32_t active_bp_count = 0;
+      uint32_t failed_bp_count = 0;
+      bool     network_incident = false;
+   };
+   typedef eosio::singleton<"rewardseal"_n, reward_seal_state> reward_seal_singleton;
 
    struct [[eosio::table, eosio::contract("flon.system")]] pending_voter_state {
       name              voter;
@@ -552,7 +587,9 @@ namespace eosiosystem {
 
    struct [[eosio::table("gasrewcfg"), eosio::contract("flon.system")]] gas_reward_config {
       bool enabled = false;
-      uint32_t epoch_slots = 43'200;
+      // One hour at two slots per second. Existing on-chain configurations are
+      // explicit rows and require a governed boundary migration.
+      uint32_t epoch_slots = 7'200;
       uint16_t active_min_bp = 9'500;
       // Retains the serialized position of the removed standby-proof threshold.
       uint16_t reserved_standby_proofs = 0;
@@ -634,6 +671,19 @@ namespace eosiosystem {
       uint64_t primary_key() const { return epoch_id; }
    };
    using gas_settlements = eosio::multi_index<"gassettles"_n, gas_settlement>;
+
+   struct [[eosio::table, eosio::contract("flon.system")]] gas_epoch_claim {
+      uint64_t epoch_id = 0;
+      asset quantity;
+      uint64_t primary_key() const { return epoch_id; }
+   };
+   using gas_epoch_claims_table = eosio::multi_index<"gasclaims"_n, gas_epoch_claim>;
+
+   struct [[eosio::table("gasautostate"), eosio::contract("flon.system")]] gas_auto_state {
+      uint64_t next_epoch = 0;
+      bool initialized = false;
+   };
+   using gas_auto_state_singleton = eosio::singleton<"gasautostate"_n, gas_auto_state>;
 
    /**
     * The `flon.system` smart contract is provided by `block.one` as a sample system contract, and it defines the structures and actions needed for blockchain's core functionality.
@@ -740,6 +790,13 @@ namespace eosiosystem {
          [[eosio::action]]
          void setprodcfg( const time_point& schedule_start, const time_point& reward_epoch_start,
                           const asset& initial_block_reward );
+
+         /**
+          * Schedule the one-hour reward epoch timeline for an already-running
+          * chain at a future, legacy-epoch-aligned boundary.
+          */
+         [[eosio::action]]
+         void setrwdcfg( const time_point& start_time );
 
          #endif//ENABLE_VOTING_PRODUCER
 
@@ -1071,15 +1128,7 @@ namespace eosiosystem {
           * @param owner - producer account claiming per-block and per-vote rewards.
           */
          [[eosio::action]]
-         void claimrewards( const name& owner );
-
-         /**
-          * Finalize one completed six-hour reward epoch. The action is
-          * permissionless, sequential, and deterministic. It fixes voter
-          * reward ownership before any next-epoch vote changes are activated.
-          */
-         [[eosio::action]]
-         void closeepoch( uint64_t epoch_id );
+         void claimrewards( const name& caller, const name& producer, uint16_t max_steps );
 
          /**
           * Undo reward action, undo the produced block rewards.
@@ -1179,9 +1228,6 @@ namespace eosiosystem {
          void setgasrwcfg(bool enabled, uint32_t epoch_slots, uint16_t active_min_bp,
                           uint16_t pool_bp, uint16_t active_share_bp);
 
-         [[eosio::action]] void beginsettle(uint64_t epoch_id);
-         [[eosio::action]] void settlenext(uint64_t epoch_id, uint16_t max_rows);
-         [[eosio::action]] void finalizeepoch(uint64_t epoch_id);
          [[eosio::action]] void resolveincdt(uint64_t epoch_id, bool proceed);
 
          using init_action = eosio::action_wrapper<"init"_n, &system_contract::init>;
@@ -1203,7 +1249,7 @@ namespace eosiosystem {
          // using voteupdate_action = eosio::action_wrapper<"voteupdate"_n, &system_contract::voteupdate>;
          using claimrewards_action = eosio::action_wrapper<"claimrewards"_n, &system_contract::claimrewards>;
          using setprodcfg_action = eosio::action_wrapper<"setprodcfg"_n, &system_contract::setprodcfg>;
-         using closeepoch_action = eosio::action_wrapper<"closeepoch"_n, &system_contract::closeepoch>;
+         using setrwdcfg_action = eosio::action_wrapper<"setrwdcfg"_n, &system_contract::setrwdcfg>;
          using rmvproducer_action = eosio::action_wrapper<"rmvproducer"_n, &system_contract::rmvproducer>;
          #endif//ENABLE_VOTING_PRODUCER
          #ifdef ENABLE_NAME_BID
@@ -1216,9 +1262,6 @@ namespace eosiosystem {
          // using cfgreward_action = eosio::action_wrapper<"cfgreward"_n, &system_contract::cfgreward>;
          using setibintervl_action = eosio::action_wrapper<"setibintervl"_n, &system_contract::setibintervl>;
 
-         using beginsettle_action = eosio::action_wrapper<"beginsettle"_n, &system_contract::beginsettle>;
-         using settlenext_action = eosio::action_wrapper<"settlenext"_n, &system_contract::settlenext>;
-         using finalizeepoch_action = eosio::action_wrapper<"finalizeepoch"_n, &system_contract::finalizeepoch>;
 
       private:
          // Implementation details:
@@ -1243,6 +1286,13 @@ namespace eosiosystem {
          void channel_to_system_fees( const name& from, const asset& amount );
          void ensure_gas_epoch_roles(uint64_t epoch_id, const gas_reward_config& config);
          void accumulate_gas_node_stats(uint32_t current_slot);
+         void accumulate_gas_slot_stats(
+            uint32_t from_slot, uint32_t to_slot,
+            const std::vector<eosio::producer_slot_stats>& samples);
+         void advance_gas_settlement(uint32_t current_slot);
+         void beginsettle(uint64_t epoch_id);
+         void settlenext(uint64_t epoch_id, uint16_t max_rows);
+         void finalizeepoch(uint64_t epoch_id);
 
 
          #ifdef ENABLE_VOTING_PRODUCER
@@ -1269,12 +1319,20 @@ namespace eosiosystem {
          void update_pending_allocation_deltas(const std::vector<vote_allocation>& old_allocations,
                                                 const std::vector<vote_allocation>& new_allocations);
          uint64_t current_reward_epoch( const time_point& now ) const;
+         uint64_t next_vote_epoch() const;
          uint64_t reward_epoch_for_slot( uint32_t slot ) const;
+         uint32_t reward_epoch_start_slot( uint64_t epoch_id ) const;
+         uint32_t reward_epoch_end_slot( uint64_t epoch_id ) const;
          void record_producer_slot_stats( const block_timestamp& timestamp );
-         void accumulate_producer_slot_stats( uint64_t epoch_id, uint32_t from_slot, uint32_t to_slot );
+         void accumulate_producer_slot_stats(
+            uint64_t epoch_id, uint32_t from_slot, uint32_t to_slot,
+            const std::vector<eosio::producer_slot_stats>& samples );
          uint64_t suspension_cooldown_epochs( uint32_t suspension_count ) const;
          bool is_performance_eligible( const name& producer, uint64_t epoch_id ) const;
          uint32_t reward_factor_basis_points( const bp_performance* stats, bool network_incident ) const;
+         void advance_reward_epoch_seal( uint16_t max_rows );
+         void classify_producer_epoch( uint64_t epoch_id, const bp_performance& stats,
+                                       bool complete_sample, bool network_incident );
 
          // defined in finalizer_key.cpp
          bool is_savanna_consensus();

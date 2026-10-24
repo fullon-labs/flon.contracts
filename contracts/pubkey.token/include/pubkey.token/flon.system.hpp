@@ -11,7 +11,7 @@ namespace flon {
          using contract::contract;
 
         [[eosio::action]]
-        void claimrewards( const name& submitter, const name& owner );
+        void claimrewards( const name& caller, const name& producer, uint16_t max_steps );
         using claimrewards_action = eosio::action_wrapper<"claimrewards"_n, &flon_system::claimrewards>;
 
   };

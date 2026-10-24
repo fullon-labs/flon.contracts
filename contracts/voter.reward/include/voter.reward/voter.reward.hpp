@@ -1,6 +1,7 @@
 #pragma once
 
 #include <eosio/asset.hpp>
+#include <eosio/binary_extension.hpp>
 #include <eosio/eosio.hpp>
 #include <eosio/singleton.hpp>
 #include <eosio/privileged.hpp>
@@ -119,15 +120,10 @@ namespace flon {
           * @param voter - the account of voter
           */
          [[eosio::action]]
-         void claimrewards( const name& voter );
+         void claimrewards( const name& caller, const name& voter, uint16_t max_steps );
 
-         /**
-          * Seal a completed reward epoch after all producer reward transfers
-          * for that epoch have been received. Only the system contract may
-          * advance this monotonically increasing boundary.
-          */
          [[eosio::action]]
-         void closeepoch( uint64_t epoch_id );
+         void sealepoch( uint64_t epoch_id, uint16_t max_steps );
 
          /**
           * claim rewards for voter
@@ -157,7 +153,7 @@ namespace flon {
          using voteproducer_action = eosio::action_wrapper<"voteproducer"_n, &voter_reward::voteproducer>;
          using votealloc_action = eosio::action_wrapper<"votealloc"_n, &voter_reward::votealloc>;
          using claimrewards_action = eosio::action_wrapper<"claimrewards"_n, &voter_reward::claimrewards>;
-         using closeepoch_action = eosio::action_wrapper<"closeepoch"_n, &voter_reward::closeepoch>;
+         using sealepoch_action = eosio::action_wrapper<"sealepoch"_n, &voter_reward::sealepoch>;
          using claimfor_action = eosio::action_wrapper<"claimfor"_n, &voter_reward::claimfor>;
    public:
          struct [[eosio::table("global")]] global_state {
@@ -242,9 +238,18 @@ namespace flon {
          struct [[eosio::table]] epoch_index {
             name     producer;
             int128_t rewards_per_vote = 0;
+            eosio::binary_extension<int64_t> votes;
 
             uint64_t primary_key() const { return producer.value; }
             typedef eosio::multi_index<"epochindex"_n, epoch_index> table;
+         };
+
+         struct [[eosio::table("sealstate")]] seal_state {
+            uint64_t epoch_id = 0;
+            uint8_t phase = 1;
+            name cursor;
+
+            typedef eosio::singleton<"sealstate"_n, seal_state> table;
          };
 
          struct [[eosio::table]] producer_delta {
@@ -274,6 +279,7 @@ namespace flon {
       voter_allocations::table _voter_allocations_tbl{get_self(), get_self().value};
       pending_allocations::table _pending_allocations_tbl{get_self(), get_self().value};
       producer_delta::table   _producer_delta_tbl{get_self(), get_self().value};
+      seal_state::table       _seal_state_tbl{get_self(), get_self().value};
 
       void claim_rewards( const name& voter );
       void allocate_producer_rewards(voted_producer_map& producers, int64_t weight_old, int64_t weight_delta, const name& new_payer, asset &allocated_rewards_out,

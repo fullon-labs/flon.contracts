@@ -1554,10 +1554,14 @@ BOOST_FIXTURE_TEST_CASE(producer_onblock_check, eosio_system_tester) try {
       const char* claimrewards_activation_error_message = "cannot claim rewards until the chain is activated (at least 15% of all tokens participate in voting)";
       BOOST_CHECK_EQUAL(0u, get_global_state()["total_unpaid_blocks"].as<uint32_t>());
       BOOST_REQUIRE_EQUAL(wasm_assert_msg( claimrewards_activation_error_message ),
-                          push_action(producer_names.front(), "claimrewards"_n, mvo()("owner", producer_names.front())));
+                          push_action(producer_names.front(), "claimrewards"_n,
+                                      mvo()("caller", producer_names.front())
+                                           ("producer", producer_names.front())("max_steps", 24)));
       BOOST_REQUIRE_EQUAL(0, get_balance(producer_names.front()).get_amount());
       BOOST_REQUIRE_EQUAL(wasm_assert_msg( claimrewards_activation_error_message ),
-                          push_action(producer_names.back(), "claimrewards"_n, mvo()("owner", producer_names.back())));
+                          push_action(producer_names.back(), "claimrewards"_n,
+                                      mvo()("caller", producer_names.back())
+                                           ("producer", producer_names.back())("max_steps", 24)));
       BOOST_REQUIRE_EQUAL(0, get_balance(producer_names.back()).get_amount());
    }
 
@@ -1592,7 +1596,9 @@ BOOST_FIXTURE_TEST_CASE(producer_onblock_check, eosio_system_tester) try {
       BOOST_REQUIRE_EQUAL(true, all_21_produced);
       BOOST_REQUIRE_EQUAL(true, rest_didnt_produce);
       BOOST_REQUIRE_EQUAL(success(),
-                          push_action(producer_names.front(), "claimrewards"_n, mvo()("owner", producer_names.front())));
+                          push_action(producer_names.front(), "claimrewards"_n,
+                                      mvo()("caller", producer_names.front())
+                                           ("producer", producer_names.front())("max_steps", 24)));
       BOOST_REQUIRE(0 < get_balance(producer_names.front()).get_amount());
    }
 
@@ -1977,7 +1983,10 @@ BOOST_FIXTURE_TEST_CASE( vote_producers_in_and_out, eosio_system_tester ) try {
       BOOST_REQUIRE_EQUAL(success(), vote("producvoterd"_n, { producer_names[voted_out_index] }));
       produce_blocks(2 * 12 * 21);
       BOOST_REQUIRE(fc::crypto::public_key() != fc::crypto::public_key(get_producer_info(producer_names[voted_out_index])["producer_key"].as_string()));
-      BOOST_REQUIRE_EQUAL(success(), push_action(producer_names[voted_out_index], "claimrewards"_n, mvo()("owner", producer_names[voted_out_index])));
+      BOOST_REQUIRE_EQUAL(success(), push_action(producer_names[voted_out_index], "claimrewards"_n,
+                                                mvo()("caller", producer_names[voted_out_index])
+                                                     ("producer", producer_names[voted_out_index])
+                                                     ("max_steps", 24))));
    }
    #endif//ENABLE_PRODUCER_REWARD
 
