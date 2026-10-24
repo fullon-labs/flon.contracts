@@ -741,6 +741,11 @@ namespace eosiosystem {
       eosio::token::transfer_action transfer_glon_act{ token_account, { {get_self(), active_permission} } };
       transfer_glon_act.send( get_self(), voter, glon_quantity, "governance receipt for vote stake" );
 
+      if (eosio::is_account("dao.gov"_n)) {
+         eosio::action({get_self(), active_permission}, "dao.gov"_n, "syncpower"_n,
+                       std::make_tuple(voter)).send();
+      }
+
       materialize_pending_vote(voter);
       auto voter_itr = _voters.find( voter.value );
       if( voter_itr != _voters.end() ) {
@@ -803,6 +808,11 @@ namespace eosiosystem {
 
       eosio::token::retire_action retire_glon_act{ token_account, { {get_self(), active_permission} } };
       retire_glon_act.send( glon_quantity, "retire governance receipt" );
+
+      if (eosio::is_account("dao.gov"_n)) {
+         eosio::action({get_self(), active_permission}, "dao.gov"_n, "syncpower"_n,
+                       std::make_tuple(voter)).send();
+      }
 
       const uint64_t activation_epoch = next_vote_epoch();
       queue_vote_change(voter, current_target_votes - votes, target_producers, activation_epoch);

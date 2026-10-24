@@ -29,6 +29,8 @@ The collection of system contracts consists of the following individual contract
    + An auction for bidding for premium account names.
 * [multisig contract](contracts/flon.msig/include/flon.msig/flon.msig.hpp): A contract that enables proposing Antelope transactions on the blockchain, collecting authorization approvals for many accounts, and then executing the actions within the transaction after authorization requirements of the transaction have been reached. (Note: this contract must be deployed to a privileged account.)
 * [wrap contract](contracts/flon.wrap/include/flon.wrap/flon.wrap.hpp): A contract that wraps around any Antelope transaction and allows for executing its actions without needing to satisfy the authorization requirements of the transaction. If used, the permissions of the account hosting this contract should be configured to only allow highly trusted parties (e.g. the operators of the blockchain) to have the ability to execute its actions. (Note: this contract must be deployed to a privileged account.)
+* [DAO governance contract](contracts/dao.gov/include/dao.gov/dao.gov.hpp): Proposal, endorsement, GLON checkpoint voting, timelock, allowlisted execution, and permissionless lifecycle advancement.
+* [DAO treasury contract](contracts/dao.treasury/include/dao.treasury/dao.treasury.hpp): Allowlisted asset custody, proposal-linked budget reservations, bounded installment payments, releases, and permissionless expiry closure.
 
 ## Repository organization
 

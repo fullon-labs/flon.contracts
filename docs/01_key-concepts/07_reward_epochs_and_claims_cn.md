@@ -4,6 +4,27 @@
 
 基础挖矿奖励和 GAS 节点奖励统一采用 **1 小时会计 Epoch**。Epoch 负责封存历史事实，领取频率与 Epoch 长度解耦：BP 可以每天领取一次，也可以由任意第三方代为触发，不会因为跨过 Epoch 而丢失奖励。第三方代触发只是普通 permissionless 交易，不要求运行 Keeper 服务。
 
+### 基础挖矿奖励与 GAS 奖励的归属边界
+
+两类奖励使用相同的出块统计事实，但不是同一个分配池：
+
+```text
+每个实际产生的区块
+└─ 该区块的基础挖矿奖励毛额，100% 记入当前实际出块 BP 的 epochreward
+   └─ Epoch 封存时应用该 BP 的绩效系数
+      ├─ 不合格部分 forfeited，不转给其他 BP
+      └─ 合格部分
+         ├─ 按 reward_shared_ratio 划入 voter.reward，供该 BP 的历史有效 Voter 领取
+         └─ 剩余部分计入该 BP 的 prodclaims / producers.unclaimed_rewards
+
+每个 GAS 会计 Epoch
+└─ 当期实际计量 GAS 对应 FLON × pool_bp（默认 10%）形成节点奖励池
+   ├─ Active 池（默认节点池的 80%）：在多个实际参与出块的 Active BP 间，按 produced 比例分配
+   └─ Standby 池（最多为节点池的 20%）：按合格 Standby 数量相对 30 个目标席位缩放，再等额分配
+```
+
+因此，“每块基础奖励给当前出块 BP”描述的是**毛额的初始归属**，不是承诺 BP 运营方最终保留全部金额；绩效扣减和 Voter 分享在 Epoch 封存时发生。GAS 奖励则从一开始就是独立的多节点 Epoch 池。Standby 不参与基础挖矿奖励，且 Standby 空缺对应的 GAS 上限不会由现有 Standby 瓜分。
+
 目标 BP 入口为：
 
 ```cpp
@@ -54,7 +75,7 @@ BP 每天领取一次
 | 项目 | 周期或建议节奏 | 说明 |
 | --- | --- | --- |
 | 投票与排名生效 Epoch | 1 小时 | Epoch N 提交，N+1 起生效 |
-| 基础挖矿奖励 Epoch | 1 小时 | 按该小时实际合格出块比例计算 |
+| 基础挖矿奖励 Epoch | 1 小时 | 每块毛额归属该块实际出块 BP；Epoch 结束后逐 BP 应用绩效系数和 Voter 分享比例 |
 | GAS 奖励会计 Epoch | 1 小时 | 每小时封存池与绩效，允许按天领取 |
 | BP 资格考核窗口 | 滚动 6–24 小时 | 防止单小时网络抖动立即导致失格 |
 | BP/Voter 领取 | 随时，建议每日一次 | 与会计 Epoch 解耦 |

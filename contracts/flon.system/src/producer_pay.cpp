@@ -139,7 +139,7 @@ namespace eosiosystem {
    void system_contract::accumulate_producer_slot_stats( uint64_t epoch_id,
                                                           uint32_t from_slot,
                                                           uint32_t to_slot,
-                                                          const std::vector<eosio::producer_slot_stats>& samples ) {
+                                                          const std::vector<eosio::producer_slot_stats_v2>& samples ) {
       bp_performance_table bp_stats(get_self(), epoch_id);
 
       for (const auto& sample : samples) {
@@ -151,6 +151,7 @@ namespace eosiosystem {
                row.expected_blocks = sample.expected;
                row.produced_blocks = sample.produced;
                row.missed_blocks = sample.missed;
+               row.idle_skipped_blocks = sample.idle_skipped;
                row.longest_missed_streak = sample.longest_missed_streak;
                row.trailing_missed_streak = sample.trailing_missed_streak;
             });
@@ -161,6 +162,8 @@ namespace eosiosystem {
                row.expected_blocks += sample.expected;
                row.produced_blocks += sample.produced;
                row.missed_blocks += sample.missed;
+               row.idle_skipped_blocks =
+                  row.idle_skipped_blocks.value_or(0) + sample.idle_skipped;
                row.longest_missed_streak = std::max(
                   row.longest_missed_streak,
                   std::max<uint64_t>(sample.longest_missed_streak, joined_streak));
@@ -242,7 +245,7 @@ namespace eosiosystem {
       performance_accounting_singleton accounting(get_self(), get_self().value);
       auto state = accounting.exists() ? accounting.get() : performance_accounting_state{};
 
-      static constexpr uint8_t performance_accounting_version = 1;
+      static constexpr uint8_t performance_accounting_version = 2;
       const bool current_version = state.version.has_value() &&
                                    state.version.value() == performance_accounting_version;
 
@@ -277,7 +280,7 @@ namespace eosiosystem {
             const uint64_t gas_end = (gas_epoch + 1) * uint64_t(gas_config.epoch_slots) - 1;
             query_end = std::min(query_end, gas_end);
          }
-         const auto samples = eosio::get_producer_slot_stats(
+         const auto samples = eosio::get_producer_slot_stats_v2(
             static_cast<uint32_t>(from_slot), static_cast<uint32_t>(query_end));
          accumulate_producer_slot_stats(epoch_id, static_cast<uint32_t>(from_slot),
                                         static_cast<uint32_t>(query_end), samples);

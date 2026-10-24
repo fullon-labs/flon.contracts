@@ -184,7 +184,7 @@ void system_contract::accumulate_gas_node_stats(uint32_t current_slot) {
 
 void system_contract::accumulate_gas_slot_stats(
       uint32_t from_slot, uint32_t to_slot,
-      const std::vector<eosio::producer_slot_stats>& samples) {
+      const std::vector<eosio::producer_slot_stats_v2>& samples) {
    gas_reward_config_singleton config_table(get_self(), get_self().value);
    if (!config_table.exists()) return;
    const auto config = config_table.get();
@@ -204,6 +204,7 @@ void system_contract::accumulate_gas_slot_stats(
          row.expected += item.expected;
          row.produced += item.produced;
          row.missed += item.missed;
+         row.idle_skipped = row.idle_skipped.value_or(0) + item.idle_skipped;
          row.longest_missed = std::max(row.longest_missed,
                                        item.longest_missed_streak);
       });

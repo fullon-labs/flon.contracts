@@ -28,8 +28,15 @@ Active 和 Standby 是协议根据快照自动产生的运行状态，不是 Can
 
 ```text
 基础挖矿奖励
-└─ 100% 分配给实际出块并满足绩效条件的 Active BP 类别
-   └─ 按合格出块和绩效结果计算，不为 Standby 预留固定份额
+└─ 每个区块的毛额 100% 记给该块的实际出块 BP
+   └─ Epoch 封存时逐 BP 应用绩效系数
+      ├─ 不合格部分不转给其他 BP
+      └─ 合格部分按 reward_shared_ratio 拆为 BP 自留与 Voter 分享
+
+GAS 节点奖励
+└─ 按 GAS 会计 Epoch 建立独立的多节点奖励池
+   ├─ Active 池：多个实际参与出块的 Active BP 按 produced 比例分配
+   └─ Standby 池：按合格节点数相对 30 席缩放后等额分配
 
 Standby BP
 ├─ 无固定基础挖矿奖励
@@ -37,7 +44,7 @@ Standby BP
 └─ 主要价值是保持生产就绪，并在排名或 Active 资格变化时递补
 ```
 
-这里的“100%”是指基础挖矿奖励在**节点角色类别**之间全部归属于 Active BP，不表示 BP 运营方必然保留全部金额。每个 Active BP 仍可通过注册时公开的 `reward_shared_ratio`，把自己的部分基础奖励分享给其 Voter。Standby 不参与该基础挖矿奖励，只参与独立的 GAS Standby 池。
+这里的“100%”仅表示**单个区块基础奖励毛额的初始归属**，不表示 BP 运营方最终保留全部金额，也不表示每块奖励会在全体 Active BP 之间二次按比例切分。每个 BP 的 Epoch 毛额随后独立经过绩效判定，并可通过注册时公开的 `reward_shared_ratio` 把合格部分分享给其 Voter。Standby 不参与基础挖矿奖励，只参与独立的 GAS Standby 池。
 
 默认 GAS 节点奖励池为 total GAS 对应 FLON 的 10%；其中 Active 池占 80%，Standby 池最多占 20%。因此 Standby 理论上最多对应 total GAS 的 2%，并且按 30 个目标席位归一化，空缺席位不会被现有 Standby 瓜分。
 
@@ -285,7 +292,7 @@ fucli -u "$RPC_URL" push action flon claimbpstake '["<BP_ACCOUNT>"]' -p <BP_ACCO
 
 ### 7.1 生产要求
 
-Active BP 必须运行 producer/signature 组件并按 schedule 出块。基础奖励按实际合格出块累计，epoch 结束后才根据绩效确定最终可得金额：
+Active BP 必须运行 producer/signature 组件并按 schedule 出块。每产生一个区块，该块的基础奖励毛额只累计到实际出块 BP 的 `epochreward`，不会在其他 Active BP 之间分摊；Epoch 结束后再根据该 BP 的绩效和 `reward_shared_ratio` 确定 BP 自留、Voter 分享及不合格扣减金额：
 
 | Epoch 可用率 | 状态/奖励结果 |
 | --- | --- |

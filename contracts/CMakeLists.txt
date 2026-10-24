@@ -64,6 +64,8 @@ add_subdirectory(flon.wrap)
 add_subdirectory(voter.reward)
 add_subdirectory(gas.reward)
 add_subdirectory(pubkey.token)
+add_subdirectory(dao.gov)
+add_subdirectory(dao.treasury)
 
 
 if(BUILD_TESTS)

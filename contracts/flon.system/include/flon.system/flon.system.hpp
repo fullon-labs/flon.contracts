@@ -464,6 +464,7 @@ namespace eosiosystem {
       uint64_t trailing_missed_streak = 0;
       uint8_t  status = static_cast<uint8_t>(bp_performance_status::unassessed);
       uint32_t warning_count = 0;
+      binary_extension<uint64_t> idle_skipped_blocks;
 
       uint64_t primary_key() const { return producer.value; }
    };
@@ -621,6 +622,7 @@ namespace eosiosystem {
       uint64_t score = 0;
       bool eligible = false;
       asset allocated;
+      binary_extension<uint64_t> idle_skipped;
       uint64_t primary_key() const { return owner.value; }
    };
    using gas_node_stats = eosio::multi_index<"gasnodestats"_n, gas_node_stat>;
@@ -1288,7 +1290,7 @@ namespace eosiosystem {
          void accumulate_gas_node_stats(uint32_t current_slot);
          void accumulate_gas_slot_stats(
             uint32_t from_slot, uint32_t to_slot,
-            const std::vector<eosio::producer_slot_stats>& samples);
+            const std::vector<eosio::producer_slot_stats_v2>& samples);
          void advance_gas_settlement(uint32_t current_slot);
          void beginsettle(uint64_t epoch_id);
          void settlenext(uint64_t epoch_id, uint16_t max_rows);
@@ -1326,7 +1328,7 @@ namespace eosiosystem {
          void record_producer_slot_stats( const block_timestamp& timestamp );
          void accumulate_producer_slot_stats(
             uint64_t epoch_id, uint32_t from_slot, uint32_t to_slot,
-            const std::vector<eosio::producer_slot_stats>& samples );
+            const std::vector<eosio::producer_slot_stats_v2>& samples );
          uint64_t suspension_cooldown_epochs( uint32_t suspension_count ) const;
          bool is_performance_eligible( const name& producer, uint64_t epoch_id ) const;
          uint32_t reward_factor_basis_points( const bp_performance* stats, bool network_incident ) const;
