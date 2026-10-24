@@ -228,8 +228,8 @@ void voter_reward::votealloc(const name& voter,
 void voter_reward::claimrewards(const name& caller, const name& voter, uint16_t max_steps) {
    check_init();
    require_auth(caller);
-   CHECK(max_steps > 0, "max_steps must be positive")
-   claim_rewards(voter);
+   CHECK(max_steps > 0 && max_steps <= 30, "max_steps must be between 1 and 30")
+   claim_rewards(voter, max_steps);
 }
 
 void voter_reward::sealepoch(uint64_t epoch_id, uint16_t max_steps) {
@@ -296,34 +296,59 @@ void voter_reward::sealepoch(uint64_t epoch_id, uint16_t max_steps) {
    _seal_state_tbl.set(seal, get_self());
 }
 
-void voter_reward::claim_rewards( const name& voter ) {
+void voter_reward::claim_rewards( const name& voter, uint16_t max_steps ) {
    materialize_pending(voter);
    auto voter_itr = _voter_tbl.find(voter.value);
    check(voter_itr != _voter_tbl.end(), "voter info not found");
 
+   asset payout(0, core_symbol());
    _voter_tbl.modify(voter_itr, same_payer, [&]( auto& v) {
       if (voter_itr->votes > 0) {
-         const int64_t allocated_weight = v.producers.empty() ? 0 : v.votes / static_cast<int64_t>(v.producers.size());
          std::vector<name> producer_names;
          for (const auto& item : v.producers) producer_names.push_back(item.first);
          const auto exact_weights = target_allocations(voter, producer_names, v.votes, false);
-         allocate_producer_rewards(v.producers, allocated_weight, 0, voter,
-                                   v.unclaimed_rewards, &exact_weights);
+         uint16_t processed = 0;
+         const auto now = current_time_point();
+         for (auto& position : v.producers) {
+            auto prod_itr = _producer_tbl.find(position.first.value);
+            CHECK(prod_itr != _producer_tbl.end(), "producer not found")
+            CHECK(prod_itr->rewards_per_vote >= position.second.last_rewards_per_vote,
+                  "last_rewards_per_vote invalid")
+            const int128_t delta = prod_itr->rewards_per_vote -
+                                   position.second.last_rewards_per_vote;
+            const int64_t weight = allocation_weight(exact_weights, position.first);
+            if (delta == 0 || weight == 0) {
+               position.second.last_rewards_per_vote = prod_itr->rewards_per_vote;
+               continue;
+            }
+            if (processed >= max_steps) break;
+            const asset reward = calc_voter_rewards(weight, delta);
+            _producer_tbl.modify(prod_itr, same_payer, [&](auto& producer) {
+               CHECK(producer.allocating_rewards >= reward,
+                     "producer allocating rewards insufficient")
+               producer.allocating_rewards -= reward;
+               producer.allocated_rewards += reward;
+               producer.update_at = now;
+            });
+            position.second.last_rewards_per_vote = prod_itr->rewards_per_vote;
+            v.unclaimed_rewards += reward;
+            ++processed;
+         }
       }
-      check(v.unclaimed_rewards.amount > 0, "no rewards to claim");
-
-      TRANSFER_OUT(CORE_TOKEN, voter, v.unclaimed_rewards, "voted rewards");
-
-      v.claimed_rewards += v.unclaimed_rewards;
+      check(v.unclaimed_rewards.amount > 0, "all rewards claimed");
+      payout = v.unclaimed_rewards;
+      v.claimed_rewards += payout;
       v.unclaimed_rewards.amount = 0;
       v.update_at = current_time_point();
    });
+
+   TRANSFER_OUT(CORE_TOKEN, voter, payout, "voted rewards");
 }
 
 void voter_reward::claimfor(const name& claimer, const name& voter) {
    check_init();
    require_auth(claimer);
-   claim_rewards(voter);
+   claim_rewards(voter, 30);
 }
 
 void voter_reward::ontransfer(    const name &from,

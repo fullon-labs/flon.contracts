@@ -115,9 +115,8 @@ namespace flon {
                         uint64_t activation_epoch);
 
          /**
-          * Legacy self-claim entrypoint. Third-party claims are not allowed.
-          *
-          * @param voter - the account of voter
+          * Settle at most max_steps rewarded producer positions and pay voter.
+          * Any authorized caller may trigger it; the beneficiary is fixed.
           */
          [[eosio::action]]
          void claimrewards( const name& caller, const name& voter, uint16_t max_steps );
@@ -281,7 +280,7 @@ namespace flon {
       producer_delta::table   _producer_delta_tbl{get_self(), get_self().value};
       seal_state::table       _seal_state_tbl{get_self(), get_self().value};
 
-      void claim_rewards( const name& voter );
+      void claim_rewards( const name& voter, uint16_t max_steps );
       void allocate_producer_rewards(voted_producer_map& producers, int64_t weight_old, int64_t weight_delta, const name& new_payer, asset &allocated_rewards_out,
                                      const std::vector<vote_allocation>* exact_weights = nullptr);
       void change_vote(const name& voter, int64_t votes, bool is_adding, uint64_t activation_epoch);

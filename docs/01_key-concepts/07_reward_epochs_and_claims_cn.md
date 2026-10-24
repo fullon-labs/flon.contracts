@@ -24,6 +24,7 @@ voter.reward::claimrewards(name caller, name voter, uint16_t max_steps)
 ```
 
 第三方只能代触发。合约始终向 `producer` 或 `voter` 支付，`caller` 不能修改收款账户，也不默认收取佣金。
+Voter 的 `max_steps` 上限为 30，限制本次实际结算的 BP 奖励位置数；若仍有未结算位置可以继续调用，全部处理后下一次空调用返回 `all rewards claimed`。
 
 ## 实施状态
 
