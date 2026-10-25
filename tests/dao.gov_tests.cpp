@@ -52,6 +52,10 @@ class dao_gov_tester : public tester {
               ("max_actions", 5)
               ("max_action_bytes", 2048)
               ("max_total_action_bytes", 4096)));
+      set_risk(1, 10, 1000, 5001, 100, 5);
+      set_risk(2, 20, 1500, 6000, 800, 10);
+      set_risk(3, 30, 2500, 6700, 1500, 20);
+      set_risk(4, 100, 4000, 7500, 3000, 50);
       set_power("alice"_n, 100);
       set_power("bob"_n, 60);
       set_power("carol"_n, 40);
@@ -71,6 +75,33 @@ class dao_gov_tester : public tester {
       return gov("powersource"_n, "setpower"_n,
                  mvo()("voter", voter)
                       ("power", asset(whole_glon * 100'000'000, glon_symbol)));
+   }
+
+   action_result set_risk(uint8_t level, int64_t min_total,
+                          uint16_t quorum, uint16_t approval,
+                          uint16_t min_support, int64_t proposer) {
+      return gov("flon"_n, "setriskcfg"_n,
+         mvo()("risk_level", level)
+              ("min_total_power", asset(min_total * 100'000'000, glon_symbol))
+              ("quorum_bps", quorum)
+              ("approval_bps", approval)
+              ("min_support_bps", min_support)
+              ("proposal_threshold", asset(proposer * 100'000'000, glon_symbol))
+              ("endorsement_threshold", asset(100'000'000, glon_symbol))
+              ("min_endorsement_bps", 0)
+              ("required_endorsements", 1)
+              ("endorsement_seconds", 60)
+              ("voting_delay_seconds", 10)
+              ("voting_seconds", 60)
+              ("timelock_seconds", 60)
+              ("execution_grace_seconds", 120)
+              ("enabled", true));
+   }
+
+   action_result set_action_risk(name contract, name action_name, uint8_t level) {
+      return gov("flon"_n, "setactrisk"_n,
+         mvo()("contract", contract)("action_name", action_name)
+              ("risk_level", level)("enabled", true));
    }
 
    variant_object config_values(int64_t proposal_threshold = 500'000'000) {
@@ -168,8 +199,8 @@ BOOST_FIXTURE_TEST_CASE(snapshot_vote_and_finalize, dao_gov_tester) try {
    BOOST_REQUIRE_EQUAL(activated["snapshot_sequence"].as_uint64(), 3u);
    BOOST_REQUIRE_EQUAL(activated["snapshot_total_power"].as<asset>(),
                        asset(200 * 100'000'000LL, glon_symbol));
-   BOOST_REQUIRE_EQUAL(activated["snapshot_quorum_bps"].as_uint64(), 4000u);
-   BOOST_REQUIRE_EQUAL(activated["snapshot_approval_bps"].as_uint64(), 6000u);
+   BOOST_REQUIRE_EQUAL(activated["snapshot_quorum_bps"].as_uint64(), 1000u);
+   BOOST_REQUIRE_EQUAL(activated["snapshot_approval_bps"].as_uint64(), 5001u);
 
    // Governance rules are frozen at activation and cannot be changed retroactively.
    BOOST_REQUIRE_EQUAL(success(), gov("dao.admin"_n, "setconfig"_n,
@@ -259,6 +290,7 @@ BOOST_FIXTURE_TEST_CASE(timelock_allowlist_and_permissionless_execute, dao_gov_t
            ("authorization_actor", "dao.gov"_n)
            ("authorization_permission", "active"_n)
            ("max_data_bytes", 2048)("enabled", true)));
+   BOOST_REQUIRE_EQUAL(success(), set_action_risk("dao.gov"_n, "setconfig"_n, 4));
    BOOST_REQUIRE_EQUAL(wasm_assert_msg("allowlist authorization is immutable"),
       gov("dao.admin"_n, "setallow"_n,
          mvo()("contract", "dao.gov"_n)("action_name", "setconfig"_n)
@@ -309,6 +341,7 @@ BOOST_FIXTURE_TEST_CASE(expired_execution_window, dao_gov_tester) try {
            ("authorization_actor", "dao.gov"_n)
            ("authorization_permission", "active"_n)
            ("max_data_bytes", 2048)("enabled", true)));
+   BOOST_REQUIRE_EQUAL(success(), set_action_risk("dao.gov"_n, "setconfig"_n, 4));
    variants actions{mvo()("contract", "dao.gov"_n)
                         ("action_name", "setconfig"_n)
                         ("data", config_payload(700'000'000))};
@@ -322,6 +355,92 @@ BOOST_FIXTURE_TEST_CASE(expired_execution_window, dao_gov_tester) try {
    BOOST_REQUIRE_EQUAL(success(), gov("alice"_n, "expire"_n,
       mvo()("proposal_id", 1)));
    BOOST_REQUIRE_EQUAL(proposal(1)["status"].as_uint64(), 8u);
+} FC_LOG_AND_RETHROW()
+
+BOOST_FIXTURE_TEST_CASE(risk_policy_requires_flon_and_rejects_unclassified_actions,
+                        dao_gov_tester) try {
+   BOOST_REQUIRE_EQUAL(error("missing authority of flon"),
+      gov("dao.admin"_n, "setriskcfg"_n,
+         mvo()("risk_level", 1)
+              ("min_total_power", asset(10 * 100'000'000LL, glon_symbol))
+              ("quorum_bps", 4000)("approval_bps", 6000)
+              ("min_support_bps", 3000)
+              ("proposal_threshold", asset(5 * 100'000'000LL, glon_symbol))
+              ("endorsement_threshold", asset(100'000'000, glon_symbol))
+              ("min_endorsement_bps", 0)("required_endorsements", 1)
+              ("endorsement_seconds", 60)("voting_delay_seconds", 10)
+              ("voting_seconds", 60)("timelock_seconds", 60)
+              ("execution_grace_seconds", 120)("enabled", true)));
+
+   BOOST_REQUIRE_EQUAL(success(), gov("dao.admin"_n, "setallow"_n,
+      mvo()("contract", "dao.gov"_n)("action_name", "setconfig"_n)
+           ("authorization_actor", "dao.gov"_n)
+           ("authorization_permission", "active"_n)
+           ("max_data_bytes", 2048)("enabled", true)));
+   variants actions{mvo()("contract", "dao.gov"_n)
+                        ("action_name", "setconfig"_n)
+                        ("data", config_payload(600'000'000))};
+   BOOST_REQUIRE_EQUAL(wasm_assert_msg("proposal action has no enabled risk policy"),
+                       propose("alice"_n, actions));
+   BOOST_REQUIRE_EQUAL(success(), set_action_risk("dao.gov"_n, "setconfig"_n, 4));
+   BOOST_REQUIRE_EQUAL(success(), propose("alice"_n, actions));
+
+   BOOST_REQUIRE_EQUAL(wasm_assert_msg("governance safety policy cannot be allowlisted"),
+      gov("dao.admin"_n, "setallow"_n,
+         mvo()("contract", "dao.gov"_n)("action_name", "setriskcfg"_n)
+              ("authorization_actor", "dao.gov"_n)
+              ("authorization_permission", "active"_n)
+              ("max_data_bytes", 512)("enabled", true)));
+} FC_LOG_AND_RETHROW()
+
+BOOST_FIXTURE_TEST_CASE(l4_requires_network_floor_and_absolute_support,
+                        dao_gov_tester) try {
+   BOOST_REQUIRE_EQUAL(success(), gov("dao.admin"_n, "setallow"_n,
+      mvo()("contract", "dao.gov"_n)("action_name", "setconfig"_n)
+           ("authorization_actor", "dao.gov"_n)
+           ("authorization_permission", "active"_n)
+           ("max_data_bytes", 2048)("enabled", true)));
+   BOOST_REQUIRE_EQUAL(success(), set_action_risk("dao.gov"_n, "setconfig"_n, 4));
+   variants actions{mvo()("contract", "dao.gov"_n)
+                        ("action_name", "setconfig"_n)
+                        ("data", config_payload(600'000'000))};
+   BOOST_REQUIRE_EQUAL(success(), propose("alice"_n, actions));
+   BOOST_REQUIRE_EQUAL(success(), gov("bob"_n, "endorse"_n,
+      mvo()("endorser", "bob"_n)("proposal_id", 1)));
+   BOOST_REQUIRE_EQUAL(success(), set_power("bob"_n, 0));
+   BOOST_REQUIRE_EQUAL(success(), set_power("carol"_n, 0));
+   BOOST_REQUIRE_EQUAL(success(), set_power("alice"_n, 99));
+   produce_block(fc::seconds(61));
+   BOOST_REQUIRE_EQUAL(wasm_assert_msg(
+      "insufficient network governance power for this risk level"),
+      gov("alice"_n, "activate"_n, mvo()("proposal_id", 1)));
+} FC_LOG_AND_RETHROW()
+
+BOOST_FIXTURE_TEST_CASE(l4_absolute_support_defeats_minority_approval,
+                        dao_gov_tester) try {
+   BOOST_REQUIRE_EQUAL(success(), set_risk(4, 100, 2500, 7500, 4000, 50));
+   BOOST_REQUIRE_EQUAL(success(), gov("dao.admin"_n, "setallow"_n,
+      mvo()("contract", "dao.gov"_n)("action_name", "setconfig"_n)
+           ("authorization_actor", "dao.gov"_n)
+           ("authorization_permission", "active"_n)
+           ("max_data_bytes", 2048)("enabled", true)));
+   BOOST_REQUIRE_EQUAL(success(), set_action_risk("dao.gov"_n, "setconfig"_n, 4));
+   variants actions{mvo()("contract", "dao.gov"_n)
+                        ("action_name", "setconfig"_n)
+                        ("data", config_payload(600'000'000))};
+   BOOST_REQUIRE_EQUAL(success(), propose("alice"_n, actions));
+   BOOST_REQUIRE_EQUAL(success(), gov("carol"_n, "endorse"_n,
+      mvo()("endorser", "carol"_n)("proposal_id", 1)));
+   produce_block(fc::seconds(61));
+   BOOST_REQUIRE_EQUAL(success(), gov("alice"_n, "activate"_n,
+      mvo()("proposal_id", 1)));
+   produce_block(fc::seconds(11));
+   BOOST_REQUIRE_EQUAL(success(), gov("bob"_n, "castvote"_n,
+      mvo()("voter", "bob"_n)("proposal_id", 1)("choice", 1)));
+   produce_block(fc::seconds(61));
+   BOOST_REQUIRE_EQUAL(success(), gov("alice"_n, "finalize"_n,
+      mvo()("proposal_id", 1)));
+   BOOST_REQUIRE_EQUAL(proposal(1)["status"].as_uint64(), 3u);
 } FC_LOG_AND_RETHROW()
 
 BOOST_AUTO_TEST_SUITE_END()

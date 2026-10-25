@@ -68,6 +68,23 @@ class [[eosio::contract("dao.gov")]] dao_governance : public eosio::contract {
                                    name authorization_actor,
                                    name authorization_permission,
                                    uint32_t max_data_bytes, bool enabled);
+   [[eosio::action]] void setriskcfg(uint8_t risk_level,
+                                    asset min_total_power,
+                                    uint16_t quorum_bps,
+                                    uint16_t approval_bps,
+                                    uint16_t min_support_bps,
+                                    asset proposal_threshold,
+                                    asset endorsement_threshold,
+                                    uint16_t min_endorsement_bps,
+                                    uint16_t required_endorsements,
+                                    uint32_t endorsement_seconds,
+                                    uint32_t voting_delay_seconds,
+                                    uint32_t voting_seconds,
+                                    uint32_t timelock_seconds,
+                                    uint32_t execution_grace_seconds,
+                                    bool enabled);
+   [[eosio::action]] void setactrisk(name contract, name action_name,
+                                    uint8_t risk_level, bool enabled);
    [[eosio::action]] void sealadmin();
    [[eosio::action]] void setpower(name voter, asset power);
    [[eosio::action]] void syncpower(name voter);
@@ -185,6 +202,56 @@ class [[eosio::contract("dao.gov")]] dao_governance : public eosio::contract {
       eosio::indexed_by<"byaction"_n,
          eosio::const_mem_fun<allow_rule, uint128_t, &allow_rule::by_action>>>;
 
+   struct [[eosio::table]] risk_config {
+      uint8_t risk_level = 0;
+      asset min_total_power;
+      uint16_t quorum_bps = 0;
+      uint16_t approval_bps = 0;
+      uint16_t min_support_bps = 0;
+      asset proposal_threshold;
+      asset endorsement_threshold;
+      uint16_t min_endorsement_bps = 0;
+      uint16_t required_endorsements = 0;
+      uint32_t endorsement_seconds = 0;
+      uint32_t voting_delay_seconds = 0;
+      uint32_t voting_seconds = 0;
+      uint32_t timelock_seconds = 0;
+      uint32_t execution_grace_seconds = 0;
+      bool enabled = false;
+      uint64_t primary_key() const { return risk_level; }
+   };
+   using riskconfigs_table = eosio::multi_index<"riskconfigs"_n, risk_config>;
+
+   struct [[eosio::table]] action_policy {
+      uint64_t id;
+      name contract;
+      name action_name;
+      uint8_t risk_level = 0;
+      bool enabled = false;
+      uint64_t primary_key() const { return id; }
+      uint128_t by_action() const {
+         return (static_cast<uint128_t>(contract.value) << 64) | action_name.value;
+      }
+   };
+   using actionpolicies_table = eosio::multi_index<"actpolicies"_n, action_policy,
+      eosio::indexed_by<"byaction"_n,
+         eosio::const_mem_fun<action_policy, uint128_t, &action_policy::by_action>>>;
+
+   struct [[eosio::table]] policy_snapshot {
+      uint64_t proposal_id;
+      uint8_t risk_level = 0;
+      asset endorsement_power;
+      asset min_total_power;
+      uint16_t quorum_bps = 0;
+      uint16_t approval_bps = 0;
+      uint16_t min_support_bps = 0;
+      uint32_t timelock_seconds = 0;
+      uint32_t execution_grace_seconds = 0;
+      bool activated = false;
+      uint64_t primary_key() const { return proposal_id; }
+   };
+   using policysnaps_table = eosio::multi_index<"policysnaps"_n, policy_snapshot>;
+
    struct [[eosio::table]] endorsement_record {
       name endorser;
       asset power;
@@ -208,6 +275,8 @@ class [[eosio::contract("dao.gov")]] dao_governance : public eosio::contract {
    asset snapshot_power(name voter, uint64_t sequence, symbol governance_symbol) const;
    void update_power(name voter, asset power, global_state& state);
    void require_control(const global_state& state) const;
+   risk_config require_risk_config(uint8_t risk_level) const;
+   uint8_t action_risk(const vector<proposal_action>& actions) const;
    void validate_actions(const vector<proposal_action>& actions,
                          const governance_config& config) const;
    static checksum256 hash_actions(const vector<proposal_action>& actions);

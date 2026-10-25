@@ -23,6 +23,7 @@ The `eos-system-contracts` repository contains the system contracts encapsulatin
 5. [RAM](01_key-concepts/05_ram.md)
 6. [Vote](01_key-concepts/06_vote.md)
 7. [奖励 Epoch 与领取目标设计](01_key-concepts/07_reward_epochs_and_claims_cn.md)
+8. [DAO 分级治理安全模型](01_key-concepts/08_dao_risk_governance_cn.md)
 
 ## Build and deploy
 

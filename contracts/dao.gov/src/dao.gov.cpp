@@ -28,6 +28,34 @@ void dao_governance::require_control(const global_state& state) const {
    require_auth(state.admin);
 }
 
+dao_governance::risk_config dao_governance::require_risk_config(
+      uint8_t risk_level) const {
+   riskconfigs_table configs(get_self(), get_self().value);
+   const auto itr = configs.find(risk_level);
+   eosio::check(itr != configs.end() && itr->enabled,
+                "governance risk level is not configured");
+   return *itr;
+}
+
+uint8_t dao_governance::action_risk(
+      const vector<proposal_action>& actions) const {
+   if (actions.empty()) return 1;
+   actionpolicies_table policies(get_self(), get_self().value);
+   const auto by_action = policies.get_index<"byaction"_n>();
+   uint8_t highest = 0;
+   for (const auto& action : actions) {
+      const uint128_t key = (static_cast<uint128_t>(action.contract.value) << 64) |
+                            action.action_name.value;
+      const auto policy = by_action.find(key);
+      eosio::check(policy != by_action.end() && policy->enabled,
+                   "proposal action has no enabled risk policy");
+      eosio::check(policy->risk_level >= 1 && policy->risk_level <= 4,
+                   "proposal action has an invalid risk policy");
+      if (policy->risk_level > highest) highest = policy->risk_level;
+   }
+   return highest;
+}
+
 checksum256 dao_governance::hash_actions(const vector<proposal_action>& actions) {
    if (actions.empty()) return checksum256{};
    const auto packed = eosio::pack(actions);
@@ -56,6 +84,7 @@ void dao_governance::validate_actions(const vector<proposal_action>& actions,
       eosio::check(action.data.size() <= rule->max_data_bytes,
                    "proposal action exceeds allowlist data limit");
    }
+   action_risk(actions);
 }
 
 void dao_governance::validate_uri(const string& value, const char* field, bool required) {
@@ -153,6 +182,10 @@ void dao_governance::setallow(name contract, name action_name,
    }
    eosio::check(!(contract == get_self() && action_name == "execute"_n),
                 "recursive governance execution is forbidden");
+   eosio::check(!(contract == get_self() &&
+                  (action_name == "setriskcfg"_n ||
+                   action_name == "setactrisk"_n)),
+                "governance safety policy cannot be allowlisted");
    eosio::check(max_data_bytes > 0 && max_data_bytes <= config.max_action_bytes,
                 "invalid allowlist data limit");
    allowlist_table rules(get_self(), get_self().value);
@@ -174,6 +207,107 @@ void dao_governance::setallow(name contract, name action_name,
                    "allowlist authorization is immutable");
       by_action.modify(rule, eosio::same_payer, [&](auto& row) {
          row.max_data_bytes = max_data_bytes;
+         row.enabled = enabled;
+      });
+   }
+}
+
+void dao_governance::setriskcfg(uint8_t risk_level,
+                                asset min_total_power,
+                                uint16_t quorum_bps,
+                                uint16_t approval_bps,
+                                uint16_t min_support_bps,
+                                asset proposal_threshold,
+                                asset endorsement_threshold,
+                                uint16_t min_endorsement_bps,
+                                uint16_t required_endorsements,
+                                uint32_t endorsement_seconds,
+                                uint32_t voting_delay_seconds,
+                                uint32_t voting_seconds,
+                                uint32_t timelock_seconds,
+                                uint32_t execution_grace_seconds,
+                                bool enabled) {
+   require_auth("flon"_n);
+   const auto state = require_global();
+   eosio::check(risk_level >= 1 && risk_level <= 4, "risk level must be L1-L4");
+   eosio::check(min_total_power.symbol == state.governance_symbol &&
+                proposal_threshold.symbol == state.governance_symbol &&
+                endorsement_threshold.symbol == state.governance_symbol,
+                "risk threshold symbol mismatch");
+   eosio::check(min_total_power.amount > 0 && proposal_threshold.amount >= 0 &&
+                endorsement_threshold.amount >= 0,
+                "invalid risk power thresholds");
+   eosio::check(quorum_bps > 0 && quorum_bps <= 10000 &&
+                approval_bps > 0 && approval_bps <= 10000 &&
+                min_support_bps > 0 && min_support_bps <= 10000 &&
+                min_endorsement_bps <= 10000,
+                "invalid risk basis points");
+   eosio::check(required_endorsements > 0 && required_endorsements <= 1000,
+                "invalid risk endorsement requirement");
+   eosio::check(endorsement_seconds >= 60 && voting_seconds >= 60,
+                "risk governance periods are too short");
+   eosio::check(timelock_seconds >= 60 && execution_grace_seconds >= 60,
+                "risk execution periods are too short");
+
+   riskconfigs_table configs(get_self(), get_self().value);
+   for (auto itr = configs.begin(); itr != configs.end(); ++itr) {
+      if (itr->risk_level == risk_level || !itr->enabled || !enabled) continue;
+      const bool should_be_at_least = itr->risk_level < risk_level;
+      const bool monotonic = should_be_at_least
+         ? min_total_power >= itr->min_total_power &&
+           quorum_bps >= itr->quorum_bps &&
+           approval_bps >= itr->approval_bps &&
+           min_support_bps >= itr->min_support_bps &&
+           timelock_seconds >= itr->timelock_seconds
+         : min_total_power <= itr->min_total_power &&
+           quorum_bps <= itr->quorum_bps &&
+           approval_bps <= itr->approval_bps &&
+           min_support_bps <= itr->min_support_bps &&
+           timelock_seconds <= itr->timelock_seconds;
+      eosio::check(monotonic, "risk levels must be monotonically stricter");
+   }
+
+   auto itr = configs.find(risk_level);
+   const risk_config value{risk_level, min_total_power, quorum_bps, approval_bps,
+      min_support_bps, proposal_threshold, endorsement_threshold,
+      min_endorsement_bps, required_endorsements, endorsement_seconds,
+      voting_delay_seconds, voting_seconds, timelock_seconds,
+      execution_grace_seconds, enabled};
+   if (itr == configs.end()) {
+      configs.emplace("flon"_n, [&](auto& row) { row = value; });
+   } else {
+      configs.modify(itr, eosio::same_payer, [&](auto& row) { row = value; });
+   }
+}
+
+void dao_governance::setactrisk(name contract, name action_name,
+                                uint8_t risk_level, bool enabled) {
+   require_auth("flon"_n);
+   eosio::check(eosio::is_account(contract), "risk policy contract does not exist");
+   eosio::check(action_name.value != 0, "risk policy action is required");
+   eosio::check(!(contract == get_self() &&
+                  (action_name == "setriskcfg"_n ||
+                   action_name == "setactrisk"_n)),
+                "governance safety policy cannot govern itself");
+   if (enabled) require_risk_config(risk_level);
+   else eosio::check(risk_level >= 1 && risk_level <= 4,
+                     "risk level must be L1-L4");
+
+   actionpolicies_table policies(get_self(), get_self().value);
+   auto by_action = policies.get_index<"byaction"_n>();
+   const uint128_t key = (static_cast<uint128_t>(contract.value) << 64) |
+                         action_name.value;
+   auto itr = by_action.find(key);
+   if (itr == by_action.end()) {
+      eosio::check(enabled, "action risk policy not found");
+      uint64_t id = policies.available_primary_key();
+      if (id == 0) id = 1;
+      policies.emplace("flon"_n, [&](auto& row) {
+         row = {id, contract, action_name, risk_level, true};
+      });
+   } else {
+      by_action.modify(itr, eosio::same_payer, [&](auto& row) {
+         row.risk_level = risk_level;
          row.enabled = enabled;
       });
    }
@@ -248,9 +382,11 @@ void dao_governance::propose(name proposer, name proposal_type,
    eosio::check(content_hash != checksum256{}, "content hash is required");
    validate_uri(metadata_uri, "metadata URI", true);
    validate_uri(discussion_uri, "discussion URI", false);
-   eosio::check(current_power(proposer, state) >= config.proposal_threshold,
-                "insufficient governance power to propose");
    validate_actions(actions, config);
+   const uint8_t risk_level = action_risk(actions);
+   const auto risk = require_risk_config(risk_level);
+   eosio::check(current_power(proposer, state) >= risk.proposal_threshold,
+                "insufficient governance power to propose");
    const auto now = time_point_sec(eosio::current_time_point());
    proposals_table proposals(get_self(), get_self().value);
    const uint64_t proposal_id = ++state.last_proposal_id;
@@ -264,13 +400,20 @@ void dao_governance::propose(name proposer, name proposal_type,
       row.metadata_uri = metadata_uri;
       row.discussion_uri = discussion_uri;
       row.created_at = now;
-      row.endorsement_end = time_point_sec(now.sec_since_epoch() + config.endorsement_seconds);
+      row.endorsement_end = time_point_sec(now.sec_since_epoch() + risk.endorsement_seconds);
       row.snapshot_total_power = asset(0, state.governance_symbol);
       row.for_votes = asset(0, state.governance_symbol);
       row.against_votes = asset(0, state.governance_symbol);
       row.abstain_votes = asset(0, state.governance_symbol);
       row.actions = std::move(actions);
       row.execution_hash = hash_actions(row.actions);
+   });
+   policysnaps_table snapshots(get_self(), get_self().value);
+   snapshots.emplace(proposer, [&](auto& row) {
+      row.proposal_id = proposal_id;
+      row.risk_level = risk_level;
+      row.endorsement_power = asset(0, state.governance_symbol);
+      row.min_total_power = asset(0, state.governance_symbol);
    });
    global_singleton(get_self(), get_self().value).set(state, get_self());
 }
@@ -289,14 +432,17 @@ void dao_governance::setforum(name proposer, uint64_t proposal_id,
 void dao_governance::endorse(name endorser, uint64_t proposal_id) {
    require_auth(endorser);
    auto state = require_global();
-   auto config = require_config();
    proposals_table proposals(get_self(), get_self().value);
    auto proposal = proposals.require_find(proposal_id, "proposal not found");
    eosio::check(proposal->status == endorsement, "proposal is not accepting endorsements");
    eosio::check(time_point_sec(eosio::current_time_point()) < proposal->endorsement_end,
                 "endorsement period has ended");
+   policysnaps_table snapshots(get_self(), get_self().value);
+   auto snapshot = snapshots.require_find(proposal_id,
+      "proposal predates risk policy; cancel and recreate it");
+   const auto risk = require_risk_config(snapshot->risk_level);
    const asset power = current_power(endorser, state);
-   eosio::check(power >= config.endorsement_threshold,
+   eosio::check(power >= risk.endorsement_threshold,
                 "insufficient governance power to endorse");
    endorsements_table endorsements(get_self(), proposal_id);
    eosio::check(endorsements.find(endorser.value) == endorsements.end(),
@@ -306,28 +452,52 @@ void dao_governance::endorse(name endorser, uint64_t proposal_id) {
    });
    proposals.modify(proposal, eosio::same_payer,
                     [&](auto& row) { ++row.endorsement_count; });
+   snapshots.modify(snapshot, eosio::same_payer,
+                    [&](auto& row) { row.endorsement_power += power; });
 }
 
 void dao_governance::activate(uint64_t proposal_id) {
    auto state = require_global();
-   auto config = require_config();
    proposals_table proposals(get_self(), get_self().value);
    auto proposal = proposals.require_find(proposal_id, "proposal not found");
    eosio::check(proposal->status == endorsement, "proposal cannot be activated");
    const auto now = time_point_sec(eosio::current_time_point());
    eosio::check(now >= proposal->endorsement_end, "endorsement period is still active");
-   eosio::check(proposal->endorsement_count >= config.required_endorsements,
+   policysnaps_table snapshots(get_self(), get_self().value);
+   auto snapshot = snapshots.require_find(proposal_id,
+      "proposal predates risk policy; cancel and recreate it");
+   const uint8_t current_risk = action_risk(proposal->actions);
+   const uint8_t frozen_risk = current_risk > snapshot->risk_level
+      ? current_risk : snapshot->risk_level;
+   const auto risk = require_risk_config(frozen_risk);
+   eosio::check(state.total_power >= risk.min_total_power,
+                "insufficient network governance power for this risk level");
+   eosio::check(proposal->endorsement_count >= risk.required_endorsements,
                 "insufficient endorsements");
+   eosio::check(static_cast<__int128>(snapshot->endorsement_power.amount) * 10000 >=
+                static_cast<__int128>(state.total_power.amount) *
+                   risk.min_endorsement_bps,
+                "insufficient endorsement power");
    proposals.modify(proposal, eosio::same_payer, [&](auto& row) {
       row.snapshot_sequence = state.power_sequence;
       row.snapshot_total_power = state.total_power;
-      row.snapshot_quorum_bps = config.quorum_bps;
-      row.snapshot_approval_bps = config.approval_bps;
-      row.snapshot_timelock_seconds = config.timelock_seconds;
-      row.snapshot_execution_grace_seconds = config.execution_grace_seconds;
-      row.vote_start = time_point_sec(now.sec_since_epoch() + config.voting_delay_seconds);
-      row.vote_end = time_point_sec(row.vote_start.sec_since_epoch() + config.voting_seconds);
+      row.snapshot_quorum_bps = risk.quorum_bps;
+      row.snapshot_approval_bps = risk.approval_bps;
+      row.snapshot_timelock_seconds = risk.timelock_seconds;
+      row.snapshot_execution_grace_seconds = risk.execution_grace_seconds;
+      row.vote_start = time_point_sec(now.sec_since_epoch() + risk.voting_delay_seconds);
+      row.vote_end = time_point_sec(row.vote_start.sec_since_epoch() + risk.voting_seconds);
       row.status = voting_delay;
+   });
+   snapshots.modify(snapshot, eosio::same_payer, [&](auto& row) {
+      row.risk_level = frozen_risk;
+      row.min_total_power = risk.min_total_power;
+      row.quorum_bps = risk.quorum_bps;
+      row.approval_bps = risk.approval_bps;
+      row.min_support_bps = risk.min_support_bps;
+      row.timelock_seconds = risk.timelock_seconds;
+      row.execution_grace_seconds = risk.execution_grace_seconds;
+      row.activated = true;
    });
 }
 
@@ -374,8 +544,18 @@ void dao_governance::finalize(uint64_t proposal_id) {
    const bool approved = decisive > 0 &&
                          static_cast<__int128>(proposal->for_votes.amount) * 10000 >=
                          static_cast<__int128>(decisive) * proposal->snapshot_approval_bps;
+   policysnaps_table snapshots(get_self(), get_self().value);
+   const auto snapshot = snapshots.find(proposal_id);
+   const bool absolute_support = snapshot == snapshots.end() ||
+      (snapshot->activated &&
+       static_cast<__int128>(proposal->for_votes.amount) * 10000 >=
+       static_cast<__int128>(proposal->snapshot_total_power.amount) *
+          snapshot->min_support_bps);
    proposals.modify(proposal, eosio::same_payer,
-                    [&](auto& row) { row.status = quorum && approved ? succeeded : defeated; });
+                    [&](auto& row) {
+                       row.status = quorum && approved && absolute_support
+                          ? succeeded : defeated;
+                    });
 }
 
 void dao_governance::queue(uint64_t proposal_id) {
