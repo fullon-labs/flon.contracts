@@ -92,13 +92,20 @@ namespace eosiosystem {
       check(_gstate.reward_started_time != time_point(), "producer rewards have not started");
       const block_timestamp start_slot(_gstate.reward_started_time);
       check(slot >= start_slot.slot, "slot is before producer rewards started");
-      reward_epoch_config_v2_singleton config(get_self(), get_self().value);
-      if (config.exists()) {
-         const auto value = config.get();
-         if (slot >= value.start_slot) {
+      reward_epoch_plans_table plans(get_self(), get_self().value);
+      const auto by_start = plans.get_index<"bystart"_n>();
+      auto plan = by_start.upper_bound(slot);
+      if (plan != by_start.begin()) {
+         --plan;
+         return plan->first_epoch_id +
+                (static_cast<uint64_t>(slot) - plan->start_slot) / plan->epoch_slots;
+      }
+      legacy_reward_epoch_config_v2_singleton legacy_config(get_self(), get_self().value);
+      if (legacy_config.exists()) {
+         const auto value = legacy_config.get();
+         if (slot >= value.start_slot)
             return value.first_epoch_id +
                    (static_cast<uint64_t>(slot) - value.start_slot) / value.epoch_slots;
-         }
       }
       return (static_cast<uint64_t>(slot) - start_slot.slot) /
              legacy_reward_epoch_slots;
@@ -106,31 +113,49 @@ namespace eosiosystem {
 
    uint32_t system_contract::reward_epoch_start_slot( uint64_t epoch_id ) const {
       const block_timestamp legacy_start(_gstate.reward_started_time);
-      reward_epoch_config_v2_singleton config(get_self(), get_self().value);
       uint64_t result = 0;
-      if (config.exists() && epoch_id >= config.get().first_epoch_id) {
-         const auto value = config.get();
-         const uint64_t delta = epoch_id - value.first_epoch_id;
-         check(delta <= (std::numeric_limits<uint32_t>::max() - value.start_slot) /
-                           value.epoch_slots,
+      reward_epoch_plans_table plans(get_self(), get_self().value);
+      auto plan = plans.upper_bound(epoch_id);
+      if (plan != plans.begin()) {
+         --plan;
+         const uint64_t delta = epoch_id - plan->first_epoch_id;
+         check(delta <= (std::numeric_limits<uint32_t>::max() - plan->start_slot) /
+                           plan->epoch_slots,
                "reward epoch slot overflow");
-         result = static_cast<uint64_t>(value.start_slot) +
-                  delta * value.epoch_slots;
+         result = static_cast<uint64_t>(plan->start_slot) + delta * plan->epoch_slots;
       } else {
-         check(epoch_id <= (std::numeric_limits<uint32_t>::max() - legacy_start.slot) /
-                              legacy_reward_epoch_slots,
-               "reward epoch slot overflow");
-         result = static_cast<uint64_t>(legacy_start.slot) +
-                  epoch_id * legacy_reward_epoch_slots;
+         legacy_reward_epoch_config_v2_singleton legacy_config(get_self(), get_self().value);
+         if (legacy_config.exists() && epoch_id >= legacy_config.get().first_epoch_id) {
+            const auto value = legacy_config.get();
+            const uint64_t delta = epoch_id - value.first_epoch_id;
+            check(delta <= (std::numeric_limits<uint32_t>::max() - value.start_slot) /
+                              value.epoch_slots,
+                  "reward epoch slot overflow");
+            result = static_cast<uint64_t>(value.start_slot) + delta * value.epoch_slots;
+         } else {
+            check(epoch_id <= (std::numeric_limits<uint32_t>::max() - legacy_start.slot) /
+                                 legacy_reward_epoch_slots,
+                  "reward epoch slot overflow");
+            result = static_cast<uint64_t>(legacy_start.slot) +
+                     epoch_id * legacy_reward_epoch_slots;
+         }
       }
       check(result <= std::numeric_limits<uint32_t>::max(), "reward epoch slot overflow");
       return static_cast<uint32_t>(result);
    }
 
    uint32_t system_contract::reward_epoch_end_slot( uint64_t epoch_id ) const {
-      reward_epoch_config_v2_singleton config(get_self(), get_self().value);
-      const uint32_t slots = config.exists() && epoch_id >= config.get().first_epoch_id
-         ? config.get().epoch_slots : legacy_reward_epoch_slots;
+      uint32_t slots = legacy_reward_epoch_slots;
+      reward_epoch_plans_table plans(get_self(), get_self().value);
+      auto plan = plans.upper_bound(epoch_id);
+      if (plan != plans.begin()) {
+         --plan;
+         slots = plan->epoch_slots;
+      } else {
+         legacy_reward_epoch_config_v2_singleton legacy_config(get_self(), get_self().value);
+         if (legacy_config.exists() && epoch_id >= legacy_config.get().first_epoch_id)
+            slots = legacy_config.get().epoch_slots;
+      }
       const uint64_t result = static_cast<uint64_t>(reward_epoch_start_slot(epoch_id)) + slots - 1;
       check(result <= std::numeric_limits<uint32_t>::max(), "reward epoch slot overflow");
       return static_cast<uint32_t>(result);
@@ -773,10 +798,15 @@ namespace eosiosystem {
       if (_gstate.reward_started_time == time_point() || _gstate.reward_started_time > now ) {
          check(reward_epoch_start > now, "reward epoch start must be in the future");
          _gstate.reward_started_time = reward_epoch_start;
-         reward_epoch_config_v2_singleton reward_config(get_self(), get_self().value);
-         if (!reward_config.exists()) {
+         reward_epoch_plans_table reward_plans(get_self(), get_self().value);
+         legacy_reward_epoch_config_v2_singleton legacy_config(get_self(), get_self().value);
+         if (reward_plans.begin() == reward_plans.end() && !legacy_config.exists()) {
             const block_timestamp start_slot(reward_epoch_start);
-            reward_config.set({0, start_slot.slot, reward_epoch_slots}, get_self());
+            reward_plans.emplace(get_self(), [&](auto& row) {
+               row.first_epoch_id = 0;
+               row.start_slot = start_slot.slot;
+               row.epoch_slots = reward_epoch_slots;
+            });
          }
          // This legacy field remains serialized for live-chain compatibility;
          // the fixed protocol schedule no longer reads a configurable reward.
@@ -791,8 +821,31 @@ namespace eosiosystem {
       require_auth(get_self());
       check(_gstate.reward_started_time != time_point(), "producer rewards have not been configured");
 
-      reward_epoch_config_v2_singleton config(get_self(), get_self().value);
-      check(!config.exists(), "hourly reward epochs are already configured");
+      reward_epoch_plans_table plans(get_self(), get_self().value);
+      check(plans.begin() == plans.end(), "reward epoch schedule is already configured");
+
+      legacy_reward_epoch_config_v2_singleton legacy_config(get_self(), get_self().value);
+      if (legacy_config.exists()) {
+         const auto value = legacy_config.get();
+         const block_timestamp requested_start(start_time);
+         check(requested_start.slot == value.start_slot,
+               "start time does not match the deployed reward schedule boundary");
+         const block_timestamp legacy_start(_gstate.reward_started_time);
+         if (value.first_epoch_id > 0) {
+            plans.emplace(get_self(), [&](auto& row) {
+               row.first_epoch_id = 0;
+               row.start_slot = legacy_start.slot;
+               row.epoch_slots = legacy_reward_epoch_slots;
+            });
+         }
+         plans.emplace(get_self(), [&](auto& row) {
+            row.first_epoch_id = value.first_epoch_id;
+            row.start_slot = value.start_slot;
+            row.epoch_slots = value.epoch_slots;
+         });
+         legacy_config.remove();
+         return;
+      }
 
       const block_timestamp start_slot(start_time);
       const block_timestamp now_slot(current_time_point());
@@ -810,7 +863,18 @@ namespace eosiosystem {
       check(state.next_epoch_to_close <= first_epoch_id,
             "hourly reward boundary is earlier than the settlement cursor");
 
-      config.set({first_epoch_id, start_slot.slot, reward_epoch_slots}, get_self());
+      if (first_epoch_id > 0) {
+         plans.emplace(get_self(), [&](auto& row) {
+            row.first_epoch_id = 0;
+            row.start_slot = legacy_start.slot;
+            row.epoch_slots = legacy_reward_epoch_slots;
+         });
+      }
+      plans.emplace(get_self(), [&](auto& row) {
+         row.first_epoch_id = first_epoch_id;
+         row.start_slot = start_slot.slot;
+         row.epoch_slots = reward_epoch_slots;
+      });
    }
    #endif//ENABLE_VOTING_PRODUCER
 } //namespace eosiosystem

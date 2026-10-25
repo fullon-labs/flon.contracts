@@ -4,9 +4,10 @@ title: BP 投票竞选上线与运行操作手册
 
 # BP 投票竞选上线与运行操作手册
 
-> 版本提示：本文的 1 小时 Epoch 参数适用于包含 `rewardcfgv2/setrwdcfg`
-> 的目标版本。已有链必须先完成旧 Epoch，再按奖励设计文档执行边界迁移；
-> 禁止直接把旧六小时状态按一小时重新解释。
+> 版本提示：本文的 1 小时 Epoch 参数适用于包含追加式
+> `rewardplans` 计划表和 `setrwdcfg` action 的目标版本。已有链必须在未来的
+> Epoch 边界追加新计划；修改前的 Epoch 继续使用当时生效的参数，修改后的
+> Epoch 使用新参数，主网 ABI 不采用 `v2` 表名。
 
 本文是 FullOn Block Producer（BP）投票竞选从测试链验证、主网上线到日常运行的操作手册。它覆盖链下节点准备、链上合约和参数启用，以及 Candidate、Active BP、Standby BP 和 Voter 的实际操作流程。
 

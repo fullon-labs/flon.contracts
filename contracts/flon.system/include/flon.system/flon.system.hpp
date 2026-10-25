@@ -533,16 +533,33 @@ namespace eosiosystem {
    };
    typedef eosio::singleton<"rewardepoch"_n, reward_epoch_state> reward_epoch_singleton;
 
-   // A tail/version table rather than a reinterpretation of reward_started_time.
-   // Epochs below first_epoch_id retain the legacy six-hour schedule; epochs at
-   // and above it use the hourly schedule anchored at start_slot.
-   struct [[eosio::table("rewardcfgv2"), eosio::contract("flon.system")]] reward_epoch_config_v2 {
+   // Append-only reward epoch schedule. Each row starts a new interpretation
+   // at an explicit epoch/slot boundary; prior rows remain authoritative for
+   // historical epochs.
+   struct [[eosio::table, eosio::contract("flon.system")]] reward_epoch_plan {
+      uint64_t first_epoch_id = 0;
+      uint32_t start_slot = 0;
+      uint32_t epoch_slots = reward_epoch_slots;
+
+      uint64_t primary_key() const { return first_epoch_id; }
+      uint64_t by_start_slot() const { return start_slot; }
+   };
+   typedef eosio::multi_index<
+      "rewardplans"_n, reward_epoch_plan,
+      indexed_by<"bystart"_n,
+         const_mem_fun<reward_epoch_plan, uint64_t, &reward_epoch_plan::by_start_slot>>>
+      reward_epoch_plans_table;
+
+   // Read-only compatibility shape for chains that deployed the transitional
+   // rewardcfgv2 singleton. It is intentionally omitted from the public ABI;
+   // setrwdcfg migrates its boundary into rewardplans without rewriting history.
+   struct legacy_reward_epoch_config_v2 {
       uint64_t first_epoch_id = 0;
       uint32_t start_slot = 0;
       uint32_t epoch_slots = reward_epoch_slots;
    };
-   typedef eosio::singleton<"rewardcfgv2"_n, reward_epoch_config_v2>
-      reward_epoch_config_v2_singleton;
+   typedef eosio::singleton<"rewardcfgv2"_n, legacy_reward_epoch_config_v2>
+      legacy_reward_epoch_config_v2_singleton;
 
    enum class reward_seal_phase : uint8_t { ending = 1, applying_deltas = 2, sealed = 3 };
 

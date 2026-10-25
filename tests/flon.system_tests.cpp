@@ -803,6 +803,15 @@ BOOST_FIXTURE_TEST_CASE( producer_configuration_uses_fixed_reward_schedule, eosi
    const auto global = get_global_state();
    BOOST_REQUIRE_EQUAL(core_sym::from_string("0.0000"),
                        global["initial_rewards_per_block"].as<asset>());
+
+   const auto data = get_row_by_account(config::system_account_name,
+                                        config::system_account_name,
+                                        "rewardplans"_n, 0);
+   BOOST_REQUIRE(!data.empty());
+   const auto plan = abi_ser.binary_to_variant(
+      "reward_epoch_plan", data, abi_serializer::create_yield_function(abi_serializer_max_time));
+   BOOST_REQUIRE_EQUAL(0u, plan["first_epoch_id"].as_uint64());
+   BOOST_REQUIRE_EQUAL(7200u, plan["epoch_slots"].as_uint64());
 } FC_LOG_AND_RETHROW()
 
 BOOST_FIXTURE_TEST_CASE( producer_configuration_rejects_legacy_reward_override, eosio_system_tester ) try {

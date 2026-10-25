@@ -127,7 +127,7 @@ Voter 奖励必须按奖励产生时的历史票权计算，不能使用领取�
 
 ## 现网迁移约束
 
-旧六小时 Epoch 的历史解释必须保留，但旧 action 不保留。原因是升级前的 `epochreward`、`bpstats`、`epochindex`、待领取余额和票权激活边界都使用旧 epoch ID；若升级后用 7,200 slots 从旧起点重新计算，同一 ID 会指向不同时间段，造成重复结算、遗漏或错误票权。`rewardcfgv2` 只在治理边界之后采用一小时公式，边界之前仍按 43,200 slots 读取。
+旧六小时 Epoch 已在其生效期间按旧参数解释和执行，不会因后续配置修改而被重新解释。链上使用统一的追加式 `rewardplans` 计划表记录每次参数开始生效的 `first_epoch_id`、`start_slot` 和 `epoch_slots`：查询历史 Epoch 时选择当时生效的计划，查询新 Epoch 时选择新边界后的计划。因此主网 ABI 不需要暴露 `rewardcfgv2` 一类版本化表名。
 
 升级时必须在治理确定的边界执行：
 
@@ -137,12 +137,12 @@ Voter 奖励必须按奖励产生时的历史票权计算，不能使用领取�
 4. 验证旧余额保持可领取，且新旧区间无重叠、无空洞；
 5. 新的统一领取 ABI 与 DApp 同一发布窗口切换。
 
-基础奖励的版本化边界由系统权限设置：
+基础奖励的新生效边界由系统权限设置：
 
 ```bash
 fucli push action flon setrwdcfg '["<FUTURE_LEGACY_EPOCH_BOUNDARY>"]' -p flon@active
 ```
 
-该时间必须在未来，并且必须与旧六小时 Epoch 边界对齐。边界前继续使用旧编号和 43,200 slots；边界后从相同的连续 Epoch ID 改用每小时 7,200 slots，避免重新解释历史表。
+该时间必须在未来，并且必须与当前计划的 Epoch 边界对齐。操作会在 `rewardplans` 中写入旧计划和新计划的连续边界：修改前已产生的 Epoch 保持原参数，修改后的 Epoch 使用每小时 7,200 slots，Epoch ID 连续且没有重叠或空洞。曾部署过过渡表 `rewardcfgv2` 的链可在升级时将其既有边界迁移为同样的计划行；该兼容表不再出现在新版公开 ABI 中。
 
 已有 GAS 配置需要先关闭旧结算、禁用奖励配置，完成所有旧 Epoch 后再以 `epoch_slots=7200` 重新启用。每个历史 GAS Epoch 自带 `gasepochcfg`，不会因新配置改变而重写。
