@@ -131,12 +131,26 @@ void dao_governance::setconfig(asset proposal_threshold,
 }
 
 void dao_governance::setallow(name contract, name action_name,
+                              name authorization_actor,
+                              name authorization_permission,
                               uint32_t max_data_bytes, bool enabled) {
    auto state = require_global();
    const auto config = require_config();
    require_control(state);
    eosio::check(eosio::is_account(contract), "allowlist contract does not exist");
    eosio::check(action_name.value != 0, "allowlist action is required");
+   eosio::check(eosio::is_account(authorization_actor),
+                "authorization actor does not exist");
+   eosio::check(authorization_permission.value != 0,
+                "authorization permission is required");
+   eosio::check(authorization_actor == get_self() ||
+                authorization_actor == contract,
+                "authorization actor must be dao.gov or the target contract");
+   if (authorization_actor == contract && contract != get_self()) {
+      eosio::check(authorization_permission != "owner"_n &&
+                   authorization_permission != "active"_n,
+                   "target contract owner or active permission is forbidden");
+   }
    eosio::check(!(contract == get_self() && action_name == "execute"_n),
                 "recursive governance execution is forbidden");
    eosio::check(max_data_bytes > 0 && max_data_bytes <= config.max_action_bytes,
@@ -150,10 +164,14 @@ void dao_governance::setallow(name contract, name action_name,
       eosio::check(enabled, "allowlist rule not found");
       const uint64_t id = ++state.last_allow_id;
       rules.emplace(get_self(), [&](auto& row) {
-         row = {id, contract, action_name, max_data_bytes, true};
+         row = {id, contract, action_name, authorization_actor,
+                authorization_permission, max_data_bytes, true};
       });
       global_singleton(get_self(), get_self().value).set(state, get_self());
    } else {
+      eosio::check(rule->authorization_actor == authorization_actor &&
+                   rule->authorization_permission == authorization_permission,
+                   "allowlist authorization is immutable");
       by_action.modify(rule, eosio::same_payer, [&](auto& row) {
          row.max_data_bytes = max_data_bytes;
          row.enabled = enabled;
@@ -397,10 +415,18 @@ void dao_governance::execute(uint64_t proposal_id) {
       row.executed_at = now;
    });
    for (const auto& frozen : actions) {
+      allowlist_table rules(get_self(), get_self().value);
+      const auto by_action = rules.get_index<"byaction"_n>();
+      const uint128_t key =
+         (static_cast<uint128_t>(frozen.contract.value) << 64) |
+         frozen.action_name.value;
+      const auto rule = by_action.require_find(key,
+                                               "proposal action is not allowlisted");
       eosio::action action;
       action.account = frozen.contract;
       action.name = frozen.action_name;
-      action.authorization = {{get_self(), "active"_n}};
+      action.authorization = {{rule->authorization_actor,
+                               rule->authorization_permission}};
       action.data = frozen.data;
       action.send();
    }

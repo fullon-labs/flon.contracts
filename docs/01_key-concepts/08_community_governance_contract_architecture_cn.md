@@ -52,7 +52,7 @@ Draft
 |---|---|
 | `init` | 初始化治理合约和 GLON 数据源 |
 | `setconfig` | 设置版本化治理参数；上线后只能由治理自身执行 |
-| `setallow` | 管理可执行的目标合约/action 白名单 |
+| `setallow` | 管理目标合约/action、执行授权账户与权限、数据上限 |
 | `setpower` | 接收 `flon.system` 同步的 GLON 治理权检查点 |
 | `propose` | 创建提案并冻结正文哈希、讨论地址和执行内容 |
 | `setforum` | 在正式投票前补充或更正论坛讨论地址 |
@@ -160,6 +160,8 @@ GET  /governance/topics/{chain_id}/{proposal_id}/comments
 ## 5. 安全边界
 
 - `dao.gov` 不接受任意目标 action；执行前必须通过双键白名单 `target_contract + action_name`。
+- 白名单同时固定执行身份和权限；规则创建后只能调整数据上限或启停，不能静默更换授权身份。
+- 目标合约自身的 `owner`/`active` 权限禁止进入白名单；系统操作必须使用独立的最小权限（测试网为 `flon@dao`）并逐项 `linkauth`。
 - 提案创建时即冻结 action 数据，后续不能替换。
 - 投票激活时冻结 quorum、通过率、Timelock 和执行宽限期，后续配置变化不追溯影响已经激活的提案。
 - 执行 action 数量、单 action 数据和总数据大小均设置上限。
@@ -181,7 +183,7 @@ GET  /governance/topics/{chain_id}/{proposal_id}/comments
 - `queue`、`execute` 和 `expire` 均为 permissionless action；调用者只推进已由链上规则确定的状态，不能更改执行内容。
 - `execute` 在发送 inline action 前重新检查当前白名单和数据上限；安全委员会或治理撤销白名单后，尚未执行的提案会被阻止。
 - `sealadmin` 可永久关闭启动期管理员入口；之后 `setconfig`、`setallow` 只能由 `dao.gov` 自身通过治理执行。
-- 部署时必须配置最小权限 `dao.gov@eosio.code`，不授予宽泛 owner 权限。
+- 部署时必须配置最小权限 `dao.gov@flon.code`，不授予宽泛 owner 权限。
 
 ### Phase 3：`dao.treasury`
 
@@ -210,11 +212,27 @@ GET  /governance/topics/{chain_id}/{proposal_id}/comments
 
 1. 由 `flonian` 创建 `dao.gov` 和 `dao.treasury`，owner 由 `flonian` 管理；上线阶段 active 也由 `flonian` 控制。
 2. 部署经相同源码和 FLON CDT 版本构建的 WASM/ABI，并记录 SHA-256。
-3. 为 `dao.gov@active` 增加且仅增加 `dao.gov@eosio.code`；为 `dao.treasury@active` 增加且仅增加 `dao.treasury@eosio.code`。不要授予 owner 或通配权限。
+3. 为 `dao.gov@active` 增加且仅增加 `dao.gov@flon.code`；为 `dao.treasury@active` 增加且仅增加 `dao.treasury@flon.code`。不要授予 owner 或通配权限。
 4. 执行 `dao.gov::init`：启动管理员使用 `flonian`，票权来源使用 `flon`，治理符号使用与链上 GLON 完全一致的精度。
 5. 执行 `dao.treasury::init`，治理账户固定为 `dao.gov`。
 6. 调用 `dao.gov::setconfig` 写入经过评审的门限、投票周期、Timelock 和 action 数据大小限制。
 7. 仅为已审计的目标 action 调用 `setallow`；Treasury 首批通常只允许 `setasset`、`reserve`、`pay` 和 `release`，每项都设置独立的数据上限。
+
+### 执行权限隔离
+
+白名单只决定某个 action 是否能进入可执行提案，不代表 `dao.gov` 自动获得目标合约权限。每条 `allowlist` 规则同时冻结：
+
+- `contract` 与 `action_name`；
+- `authorization_actor@authorization_permission`；
+- `max_data_bytes` 与启用状态。
+
+授权账户只能是 `dao.gov` 或目标合约本身。Treasury action 使用 `dao.gov@active`；系统参数 action 使用独立的 `flon@dao`，不得把 `flon@active` 委托给治理合约。`flon@dao` 的 authority 仅包含 `dao.gov@flon.code`，并通过 `linkauth` 只连接以下首批治理 action：
+
+- `flon::setbpquorum`；
+- `flon::setbpstake`；
+- `flon::setgasrwcfg`。
+
+不应将 `setparams`、`setpriv`、`setcode`、`updateauth`、一次性奖励迁移或事件裁定 action 放入初始白名单。
 8. 升级 `flon.system`，使 `addvote/subvote` 自动同步 `dao.gov::syncpower`。升级前确认两个治理合约已部署并初始化，避免内联同步进入未初始化状态。
 9. 对现有 GLON 持有人 permissionless 调用 `syncpower`，核对 `powers`、`checkpoints` 和 `global.total_power`。
 10. 在测试网完成“提案 → 附议 → 快照 → 投票 → finalize → queue → Timelock → execute”以及 Treasury 预留/分期付款/释放/到期关闭全流程。

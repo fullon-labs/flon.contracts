@@ -247,9 +247,31 @@ BOOST_FIXTURE_TEST_CASE(permissionless_timing_and_quorum_defeat, dao_gov_tester)
 } FC_LOG_AND_RETHROW()
 
 BOOST_FIXTURE_TEST_CASE(timelock_allowlist_and_permissionless_execute, dao_gov_tester) try {
+   BOOST_REQUIRE_EQUAL(wasm_assert_msg(
+      "authorization actor must be dao.gov or the target contract"),
+      gov("dao.admin"_n, "setallow"_n,
+         mvo()("contract", "dao.gov"_n)("action_name", "setconfig"_n)
+              ("authorization_actor", "alice"_n)
+              ("authorization_permission", "active"_n)
+              ("max_data_bytes", 2048)("enabled", true)));
    BOOST_REQUIRE_EQUAL(success(), gov("dao.admin"_n, "setallow"_n,
       mvo()("contract", "dao.gov"_n)("action_name", "setconfig"_n)
+           ("authorization_actor", "dao.gov"_n)
+           ("authorization_permission", "active"_n)
            ("max_data_bytes", 2048)("enabled", true)));
+   BOOST_REQUIRE_EQUAL(wasm_assert_msg("allowlist authorization is immutable"),
+      gov("dao.admin"_n, "setallow"_n,
+         mvo()("contract", "dao.gov"_n)("action_name", "setconfig"_n)
+              ("authorization_actor", "dao.gov"_n)
+              ("authorization_permission", "owner"_n)
+              ("max_data_bytes", 2048)("enabled", true)));
+   BOOST_REQUIRE_EQUAL(wasm_assert_msg(
+      "target contract owner or active permission is forbidden"),
+      gov("dao.admin"_n, "setallow"_n,
+         mvo()("contract", "alice"_n)("action_name", "test"_n)
+              ("authorization_actor", "alice"_n)
+              ("authorization_permission", "active"_n)
+              ("max_data_bytes", 16)("enabled", true)));
    variants actions{mvo()("contract", "dao.gov"_n)
                         ("action_name", "setconfig"_n)
                         ("data", config_payload(600'000'000))};
@@ -263,12 +285,16 @@ BOOST_FIXTURE_TEST_CASE(timelock_allowlist_and_permissionless_execute, dao_gov_t
 
    BOOST_REQUIRE_EQUAL(success(), gov("dao.admin"_n, "setallow"_n,
       mvo()("contract", "dao.gov"_n)("action_name", "setconfig"_n)
+           ("authorization_actor", "dao.gov"_n)
+           ("authorization_permission", "active"_n)
            ("max_data_bytes", 2048)("enabled", false)));
    produce_block(fc::seconds(61));
    BOOST_REQUIRE_EQUAL(wasm_assert_msg("proposal action is not allowlisted"),
       gov("carol"_n, "execute"_n, mvo()("proposal_id", 1)));
    BOOST_REQUIRE_EQUAL(success(), gov("dao.admin"_n, "setallow"_n,
       mvo()("contract", "dao.gov"_n)("action_name", "setconfig"_n)
+           ("authorization_actor", "dao.gov"_n)
+           ("authorization_permission", "active"_n)
            ("max_data_bytes", 2048)("enabled", true)));
    BOOST_REQUIRE_EQUAL(success(), gov("carol"_n, "execute"_n,
       mvo()("proposal_id", 1)));
@@ -280,6 +306,8 @@ BOOST_FIXTURE_TEST_CASE(timelock_allowlist_and_permissionless_execute, dao_gov_t
 BOOST_FIXTURE_TEST_CASE(expired_execution_window, dao_gov_tester) try {
    BOOST_REQUIRE_EQUAL(success(), gov("dao.admin"_n, "setallow"_n,
       mvo()("contract", "dao.gov"_n)("action_name", "setconfig"_n)
+           ("authorization_actor", "dao.gov"_n)
+           ("authorization_permission", "active"_n)
            ("max_data_bytes", 2048)("enabled", true)));
    variants actions{mvo()("contract", "dao.gov"_n)
                         ("action_name", "setconfig"_n)

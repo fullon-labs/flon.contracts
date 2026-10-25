@@ -65,6 +65,8 @@ class [[eosio::contract("dao.gov")]] dao_governance : public eosio::contract {
                                     uint32_t max_action_bytes,
                                     uint32_t max_total_action_bytes);
    [[eosio::action]] void setallow(name contract, name action_name,
+                                   name authorization_actor,
+                                   name authorization_permission,
                                    uint32_t max_data_bytes, bool enabled);
    [[eosio::action]] void sealadmin();
    [[eosio::action]] void setpower(name voter, asset power);
@@ -170,6 +172,8 @@ class [[eosio::contract("dao.gov")]] dao_governance : public eosio::contract {
       uint64_t id;
       name contract;
       name action_name;
+      name authorization_actor;
+      name authorization_permission;
       uint32_t max_data_bytes = 0;
       bool enabled = false;
       uint64_t primary_key() const { return id; }
