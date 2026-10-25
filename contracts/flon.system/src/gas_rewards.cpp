@@ -204,7 +204,7 @@ void system_contract::accumulate_gas_slot_stats(
          row.expected += item.expected;
          row.produced += item.produced;
          row.missed += item.missed;
-         row.idle_skipped = row.idle_skipped.value_or(0) + item.idle_skipped;
+         row.idle_skipped = row.idle_skipped.value_or(uint64_t{0}) + item.idle_skipped;
          row.longest_missed = std::max(row.longest_missed,
                                        item.longest_missed_streak);
       });

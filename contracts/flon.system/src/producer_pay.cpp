@@ -163,7 +163,7 @@ namespace eosiosystem {
                row.produced_blocks += sample.produced;
                row.missed_blocks += sample.missed;
                row.idle_skipped_blocks =
-                  row.idle_skipped_blocks.value_or(0) + sample.idle_skipped;
+                  row.idle_skipped_blocks.value_or(uint64_t{0}) + sample.idle_skipped;
                if (sample.expected == 0) {
                   return;
                }
