@@ -233,10 +233,43 @@ GET  /governance/topics/{chain_id}/{proposal_id}/comments
 - `flon::setgasrwcfg`。
 
 不应将 `setparams`、`setpriv`、`setcode`、`updateauth`、一次性奖励迁移或事件裁定 action 放入初始白名单。
-8. 升级 `flon.system`，使 `addvote/subvote` 自动同步 `dao.gov::syncpower`。升级前确认两个治理合约已部署并初始化，避免内联同步进入未初始化状态。
-9. 对现有 GLON 持有人 permissionless 调用 `syncpower`，核对 `powers`、`checkpoints` 和 `global.total_power`。
-10. 在测试网完成“提案 → 附议 → 快照 → 投票 → finalize → queue → Timelock → execute”以及 Treasury 预留/分期付款/释放/到期关闭全流程。
-11. 验收后再通过治理执行 `sealadmin`，永久关闭启动管理员入口；不得在白名单和权限验证之前提前封闭恢复通道。
+
+### 测试网首批 allowlist 基线
+
+测试网链 ID：`18b4d5837d83a8f7203ea57cb7ab37b9cef59547ea307e70b1bf1103cb06043f`。截至 2026-10-25，链上启用以下 9 条规则：
+
+| 目标 action | 执行授权 | 数据上限 | 用途 |
+|---|---|---:|---|
+| `dao.gov::setconfig` | `dao.gov@active` | 128 bytes | 通过治理更新治理参数 |
+| `dao.gov::setallow` | `dao.gov@active` | 64 bytes | 通过治理启停白名单或调整数据上限 |
+| `dao.treasury::setasset` | `dao.gov@active` | 32 bytes | 配置 Treasury 可接收资产 |
+| `dao.treasury::reserve` | `dao.gov@active` | 128 bytes | 为已通过提案预留预算 |
+| `dao.treasury::pay` | `dao.gov@active` | 320 bytes | 执行受限的分期付款 |
+| `dao.treasury::release` | `dao.gov@active` | 288 bytes | 释放未使用的预留预算 |
+| `flon::setbpquorum` | `flon@dao` | 16 bytes | 调整 Active BP 目标席位数 |
+| `flon::setbpstake` | `flon@dao` | 32 bytes | 调整 BP 自质押门槛和等待期 |
+| `flon::setgasrwcfg` | `flon@dao` | 16 bytes | 调整 GAS 奖励分配参数 |
+
+`flon@dao` 的父权限为 `flon@active`，authority 只授予 `dao.gov@flon.code`，并且仅对表中的三个系统 action 建立 `linkauth`。因此，即使某项未审计的 `flon` action 被误加入 allowlist，`dao.gov` 也不能以 `flon@dao` 调用未链接的 action。
+
+合约还强制执行以下不变量：
+
+1. 授权账户只能是 `dao.gov` 或目标合约本身。
+2. 目标合约自身的 `owner`、`active` 权限不能写入 allowlist。
+3. 同一 `contract + action_name` 的执行授权创建后不可更换；只能调整 `max_data_bytes` 或启停规则。
+4. `dao.gov::execute` 在执行前重新检查规则是否启用、数据是否超限，并使用规则绑定的授权发送 inline action。
+5. `dao.gov::execute` 自身禁止进入 allowlist，避免递归执行。
+
+任何新增系统 action 必须先完成 ABI、授权要求、参数边界、RAM/CPU 成本和回滚影响审计；随后创建独立的最小权限或复用经过确认的最小权限，逐项建立 `linkauth`，最后才通过治理提案新增 allowlist。不得仅通过新增 allowlist 绕过目标合约权限控制。
+
+本次测试网部署使用 FLON CDT v0.9.0，部署交易为 `94ae9ff4f2541fda6cf18c3af709c6a09cc984b1d69a87c1ef108617e2d39830`，链上 `dao.gov` code hash 为 `4a0683afe5def2fc2d179829de92986fc717056094d8841723d6747686f0d289`。这些值用于本次部署验收，不应直接作为主网部署依据；主网必须重新构建、核验和授权。
+
+完成权限和 allowlist 配置后，继续执行：
+
+1. 升级 `flon.system`，使 `addvote/subvote` 自动同步 `dao.gov::syncpower`。升级前确认两个治理合约已部署并初始化，避免内联同步进入未初始化状态。
+2. 对现有 GLON 持有人 permissionless 调用 `syncpower`，核对 `powers`、`checkpoints` 和 `global.total_power`。
+3. 在测试网完成“提案 → 附议 → 快照 → 投票 → finalize → queue → Timelock → execute”以及 Treasury 预留/分期付款/释放/到期关闭全流程。
+4. 验收后再通过治理执行 `sealadmin`，永久关闭启动管理员入口；不得在白名单和权限验证之前提前封闭恢复通道。
 
 部署验收必须至少检查：链 ID、账户权限、链上 code hash、ABI、初始化表、GLON 同步、执行白名单、Timelock 边界、Treasury 账本守恒，以及失败交易不会留下部分状态。
 
