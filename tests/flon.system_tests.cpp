@@ -927,6 +927,7 @@ BOOST_FIXTURE_TEST_CASE( producer_register_unregister, eosio_system_tester ) try
                                                ("producer_key", key )
                                                ("url", "http://block.one")
                                                ("location", 1)
+                                               ("status_url", "https://status.block.one")
                         )
    );
 
@@ -934,6 +935,7 @@ BOOST_FIXTURE_TEST_CASE( producer_register_unregister, eosio_system_tester ) try
    BOOST_REQUIRE_EQUAL( "alice1111111", info["owner"].as_string() );
    BOOST_REQUIRE_EQUAL( 0, info["total_votes"].as_double() );
    BOOST_REQUIRE_EQUAL( "http://block.one", info["url"].as_string() );
+   BOOST_REQUIRE_EQUAL( "https://status.block.one", info["status_url"].as_string() );
 
    //change parameters one by one to check for things like #3783
    //fc::variant params2 = producer_parameters_example(2);
@@ -942,12 +944,14 @@ BOOST_FIXTURE_TEST_CASE( producer_register_unregister, eosio_system_tester ) try
                                                ("producer_key", key )
                                                ("url", "http://block.two")
                                                ("location", 1)
+                                               ("status_url", "https://status.block.two")
                         )
    );
    info = get_producer_info( "alice1111111" );
    BOOST_REQUIRE_EQUAL( "alice1111111", info["owner"].as_string() );
    BOOST_REQUIRE_EQUAL( key, fc::crypto::public_key(info["producer_key"].as_string()) );
    BOOST_REQUIRE_EQUAL( "http://block.two", info["url"].as_string() );
+   BOOST_REQUIRE_EQUAL( "https://status.block.two", info["status_url"].as_string() );
    BOOST_REQUIRE_EQUAL( 1, info["location"].as_int64() );
 
    auto key2 =  fc::crypto::public_key( std::string("EOS5jnmSKrzdBHE9n8hw58y7yxFWBC8SNiG7m8S1crJH3KvAnf9o6") ); // cspell:disable-line

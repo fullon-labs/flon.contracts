@@ -36,6 +36,9 @@ option(SYSTEM_CONFIGURABLE_WASM_LIMITS
 option(SYSTEM_BLOCKCHAIN_PARAMETERS
        "Enables use of the host functions activated by the BLOCKCHAIN_PARAMETERS protocol feature" ON)
 
+option(FLON_TESTNET_SHORT_BP_REFUND
+       "Allows the testnet flon.system build to configure BP refunds as short as 30 minutes" OFF)
+
 option(SYSTEM_ENABLE_CHAIN_CORE_VERSION_CHECK
       "Enables a configure-time check that the version of chain core's tester library is compatible with this project's unit tests" ON)
 
@@ -59,6 +62,7 @@ ExternalProject_Add(
              -DCMAKE_TOOLCHAIN_FILE=${CDT_TOOLCHAIN_FILE}
              -DSYSTEM_CONFIGURABLE_WASM_LIMITS=${SYSTEM_CONFIGURABLE_WASM_LIMITS}
              -DSYSTEM_BLOCKCHAIN_PARAMETERS=${SYSTEM_BLOCKCHAIN_PARAMETERS}
+             -DFLON_TESTNET_SHORT_BP_REFUND=${FLON_TESTNET_SHORT_BP_REFUND}
              -DCMAKE_INSTALL_PREFIX:PATH=<INSTALL_DIR>
              -DBUILD_TESTS=${BUILD_TESTS}
              -DSYSTEM_ENABLE_CDT_VERSION_CHECK=${SYSTEM_ENABLE_CDT_VERSION_CHECK}

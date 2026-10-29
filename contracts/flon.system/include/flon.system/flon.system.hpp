@@ -245,6 +245,7 @@ namespace eosiosystem {
       eosio::block_signing_authority   producer_authority;
       uint32_t                         reward_shared_ratio  = 0; //reward shared ratio
       uint8_t                          revision = 0; ///< used to track version updates in the future.
+      binary_extension<std::string>    status_url; ///< public producer status and incident page
 
       uint64_t primary_key()const { return owner.value;                             }
       uint64_t  by_votes()const    {
@@ -905,13 +906,15 @@ namespace eosiosystem {
           * @param url - the url of the block producer, normally the url of the block producer presentation website,
           * @param location - is the country code as defined in the ISO 3166, https://en.wikipedia.org/wiki/List_of_ISO_3166_country_codes
           * @param reward_shared_ratio - reward shared ratio
+          * @param status_url - public status and incident page of the block producer
           *
           * @pre Producer to register is an account
           * @pre Authority of producer to register
           */
          [[eosio::action]]
          void regproducer( const name& producer, const public_key& producer_key, const string& url,
-                           uint16_t location, optional<uint32_t> reward_shared_ratio );
+                           uint16_t location, optional<uint32_t> reward_shared_ratio,
+                           binary_extension<string> status_url );
 
          /**
           * Register producer action, indicates that a particular account wishes to become a producer,
@@ -923,13 +926,15 @@ namespace eosiosystem {
           * @param url - the url of the block producer, normally the url of the block producer presentation website,
           * @param location - is the country code as defined in the ISO 3166, https://en.wikipedia.org/wiki/List_of_ISO_3166_country_codes
           * @param reward_shared_ratio - reward shared ratio
+          * @param status_url - public status and incident page of the block producer
           *
           * @pre Producer to register is an account
           * @pre Authority of producer to register
           */
          [[eosio::action]]
          void regproducer2(   const name& producer, const block_signing_authority& producer_authority,
-                              const string& url, uint16_t location, optional<uint32_t> reward_shared_ratio );
+                              const string& url, uint16_t location, optional<uint32_t> reward_shared_ratio,
+                              binary_extension<string> status_url );
 
          /**
           * Unregister producer action, deactivates the block producer with account name `producer`.
@@ -1325,7 +1330,8 @@ namespace eosiosystem {
          #ifdef ENABLE_VOTING_PRODUCER
          // defined in voting.cpp
          void register_producer( const name& producer, const eosio::block_signing_authority& producer_authority,
-                                 const std::string& url, uint16_t location, optional<uint32_t> reward_shared_ratio );
+                                 const std::string& url, uint16_t location, optional<uint32_t> reward_shared_ratio,
+                                 const binary_extension<std::string>& status_url );
          bool has_min_bp_self_stake( const name& producer, const bp_stake_config& config ) const;
          void check_min_bp_self_stake( const name& producer, const bp_stake_config& config ) const;
          void update_elected_producers( const block_timestamp& timestamp );

@@ -20,6 +20,10 @@ if(SYSTEM_BLOCKCHAIN_PARAMETERS)
   target_compile_definitions(flon.system PUBLIC SYSTEM_BLOCKCHAIN_PARAMETERS)
 endif()
 
+if(FLON_TESTNET_SHORT_BP_REFUND)
+  target_compile_definitions(flon.system PUBLIC FLON_TESTNET_SHORT_BP_REFUND)
+endif()
+
 target_include_directories(flon.system PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include
                                                ${CMAKE_CURRENT_SOURCE_DIR}/../flon.token/include
                                                ${CMAKE_CURRENT_SOURCE_DIR}/../voter.reward/include

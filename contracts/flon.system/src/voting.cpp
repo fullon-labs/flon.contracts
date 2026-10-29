@@ -67,9 +67,13 @@ namespace eosiosystem {
                                              const block_signing_authority& producer_authority,
                                              const string& url,
                                              uint16_t location,
-                                             optional<uint32_t> reward_shared_ratio ) {
+                                             optional<uint32_t> reward_shared_ratio,
+                                             const binary_extension<string>& status_url ) {
 
       check( url.size() < 512, "url too long" );
+      if (status_url.has_value()) {
+         check(status_url.value().size() < 512, "status_url too long");
+      }
       if (reward_shared_ratio) {
          CHECK(*reward_shared_ratio <= ratio_boost, "reward_shared_ratio is too large than " + to_string(ratio_boost));
       }
@@ -119,6 +123,8 @@ namespace eosiosystem {
                info.last_claim_time = ct;
             if (reward_shared_ratio)
                info.reward_shared_ratio = *reward_shared_ratio;
+            if (status_url.has_value())
+               info.status_url = status_url.value();
          });
 
       } else {
@@ -134,6 +140,8 @@ namespace eosiosystem {
             info.producer_authority = producer_authority;
             if (reward_shared_ratio)
                info.reward_shared_ratio = *reward_shared_ratio;
+            if (status_url.has_value())
+               info.status_url = status_url.value();
          });
       }
 
@@ -141,18 +149,21 @@ namespace eosiosystem {
 
    void system_contract::regproducer(  const name& producer, const eosio::public_key& producer_key,
                                        const string& url, uint16_t location,
-                                       optional<uint32_t> reward_shared_ratio ) {
+                                       optional<uint32_t> reward_shared_ratio,
+                                       binary_extension<string> status_url ) {
       require_auth( producer );
       check( url.size() < 512, "url too long" );
 
-      register_producer( producer, convert_to_block_signing_authority( producer_key ), url, location, reward_shared_ratio );
+      register_producer( producer, convert_to_block_signing_authority( producer_key ), url, location,
+                         reward_shared_ratio, status_url );
    }
 
    void system_contract::regproducer2( const name& producer,
                                        const block_signing_authority& producer_authority,
                                        const string& url,
                                        uint16_t location,
-                                       optional<uint32_t> reward_shared_ratio) {
+                                       optional<uint32_t> reward_shared_ratio,
+                                       binary_extension<string> status_url) {
       require_auth( producer );
       check( url.size() < 512, "url too long" );
 
@@ -160,7 +171,7 @@ namespace eosiosystem {
          check( auth.is_valid(), "invalid producer authority" );
       }, producer_authority );
 
-      register_producer( producer, producer_authority, url, location, reward_shared_ratio );
+      register_producer( producer, producer_authority, url, location, reward_shared_ratio, status_url );
    }
 
    void system_contract::unregprod( const name& producer ) {
@@ -209,7 +220,13 @@ namespace eosiosystem {
       require_auth(get_self());
       check(min_self_stake.symbol == core_symbol(), "minimum self-stake must use the core symbol");
       check(min_self_stake.amount > 0, "minimum self-stake must be positive");
-      check(unstake_delay_sec >= 24 * 60 * 60, "BP unstake delay must be at least one day");
+      #ifdef FLON_TESTNET_SHORT_BP_REFUND
+      constexpr uint32_t min_unstake_delay_sec = 30 * 60;
+      #else
+      constexpr uint32_t min_unstake_delay_sec = 24 * 60 * 60;
+      #endif
+      check(unstake_delay_sec >= min_unstake_delay_sec,
+            "BP unstake delay is below the minimum allowed by this contract build");
       check(unstake_delay_sec <= 365 * 24 * 60 * 60, "BP unstake delay cannot exceed one year");
 
       bp_stake_config_singleton config(get_self(), get_self().value);
