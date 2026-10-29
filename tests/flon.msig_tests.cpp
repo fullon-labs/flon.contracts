@@ -435,7 +435,6 @@ BOOST_FIXTURE_TEST_CASE( update_system_contract_all_approve, eosio_msig_tester )
    set_abi( "flon.token"_n, contracts::token_abi().data() );
 
    create_currency( "flon.token"_n, config::system_account_name, core_sym::from_string("10000000000.0000") );
-   create_currency( "flon.token"_n, config::system_account_name, asset::from_string("10000000000.0000 GLON") );
    issue(config::system_account_name, core_sym::from_string("1000000000.0000"));
    BOOST_REQUIRE_EQUAL( core_sym::from_string("1000000000.0000"),
                         get_balance(config::system_account_name) + get_balance("flon.stake"_n) + get_balance("flon.ram"_n) );
@@ -560,7 +559,6 @@ BOOST_FIXTURE_TEST_CASE( update_system_contract_major_approve, eosio_msig_tester
    set_abi( "flon.token"_n, contracts::token_abi().data() );
 
    create_currency( "flon.token"_n, config::system_account_name, core_sym::from_string("10000000000.0000") );
-   create_currency( "flon.token"_n, config::system_account_name, asset::from_string("10000000000.0000 GLON") );
    issue(config::system_account_name, core_sym::from_string("1000000000.0000"));
    BOOST_REQUIRE_EQUAL( core_sym::from_string("1000000000.0000"), get_balance( config::system_account_name ) );
 

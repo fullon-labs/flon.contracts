@@ -796,6 +796,63 @@ BOOST_FIXTURE_TEST_CASE( producer_self_stake_qualification_and_refund, eosio_sys
    BOOST_REQUIRE_EQUAL(core_sym::from_string("1000.0000"), get_balance(producer));
 } FC_LOG_AND_RETHROW()
 
+BOOST_FIXTURE_TEST_CASE( uncommitted_bp_self_stake_can_be_redeemed_immediately, eosio_system_tester ) try {
+   const name applicant = "alice1111111"_n;
+   const auto stake = core_sym::from_string("500.0000");
+   issue_and_transfer(applicant, core_sym::from_string("1000.0000"), config::system_account_name);
+
+   BOOST_REQUIRE_EQUAL(success(), push_action(config::system_account_name, "setbpstake"_n, mvo()
+      ("enforce_schedule", false)
+      ("min_self_stake", stake)
+      ("unstake_delay_sec", 24 * 60 * 60)));
+   BOOST_REQUIRE_EQUAL(success(), push_action(applicant, "stakebp"_n, mvo()
+      ("owner", applicant)("quantity", stake)));
+   BOOST_REQUIRE_EQUAL(core_sym::from_string("500.0000"), get_balance(applicant));
+
+   // A candidate deposit that has never entered a registered producer
+   // lifecycle is not governance power and can be returned immediately.
+   BOOST_REQUIRE_EQUAL(success(), push_action(applicant, "unstakebp"_n, mvo()
+      ("owner", applicant)("quantity", stake)));
+   BOOST_REQUIRE_EQUAL(core_sym::from_string("1000.0000"), get_balance(applicant));
+} FC_LOG_AND_RETHROW()
+
+BOOST_FIXTURE_TEST_CASE( committed_bp_self_stake_refund_blocks_restake_until_settled, eosio_system_tester ) try {
+   const name producer = "alice1111111"_n;
+   const auto stake = core_sym::from_string("500.0000");
+   issue_and_transfer(producer, core_sym::from_string("1100.0000"), config::system_account_name);
+
+   BOOST_REQUIRE_EQUAL(success(), push_action(config::system_account_name, "setbpstake"_n, mvo()
+      ("enforce_schedule", false)
+      ("min_self_stake", stake)
+      ("unstake_delay_sec", 24 * 60 * 60)));
+   BOOST_REQUIRE_EQUAL(success(), push_action(producer, "stakebp"_n, mvo()
+      ("owner", producer)("quantity", stake)));
+   BOOST_REQUIRE_EQUAL(success(), regproducer(producer));
+   BOOST_REQUIRE_EQUAL(success(), push_action(producer, "unregprod"_n, mvo()("producer", producer)));
+   BOOST_REQUIRE_EQUAL(success(), push_action(producer, "unstakebp"_n, mvo()
+      ("owner", producer)("quantity", stake)));
+
+   BOOST_REQUIRE_EQUAL(wasm_assert_msg("pending BP self-stake refund must be claimed or cancelled first"),
+      push_action(producer, "stakebp"_n, mvo()
+         ("owner", producer)("quantity", core_sym::from_string("1.0000"))));
+
+   // Cancelling restores the same committed lifecycle; withdrawing it again
+   // therefore still follows the configured delay.
+   BOOST_REQUIRE_EQUAL(success(), push_action(producer, "cancelbpref"_n, mvo()("owner", producer)));
+   BOOST_REQUIRE_EQUAL(success(), push_action(producer, "unstakebp"_n, mvo()
+      ("owner", producer)("quantity", stake)));
+   produce_block(fc::days(1));
+   BOOST_REQUIRE_EQUAL(success(), push_action(producer, "claimbpstake"_n, mvo()("owner", producer)));
+
+   // Once that generation is fully settled, a new pre-registration deposit
+   // starts a fresh, uncommitted generation and is immediately redeemable.
+   BOOST_REQUIRE_EQUAL(success(), push_action(producer, "stakebp"_n, mvo()
+      ("owner", producer)("quantity", core_sym::from_string("100.0000"))));
+   BOOST_REQUIRE_EQUAL(success(), push_action(producer, "unstakebp"_n, mvo()
+      ("owner", producer)("quantity", core_sym::from_string("100.0000"))));
+   BOOST_REQUIRE_EQUAL(core_sym::from_string("1100.0000"), get_balance(producer));
+} FC_LOG_AND_RETHROW()
+
 // Tests for voting
 BOOST_FIXTURE_TEST_CASE( producer_configuration_uses_fixed_reward_schedule, eosio_system_tester ) try {
    BOOST_REQUIRE_EQUAL(success(), setprodcfg());
@@ -806,7 +863,7 @@ BOOST_FIXTURE_TEST_CASE( producer_configuration_uses_fixed_reward_schedule, eosi
 
    const auto data = get_row_by_account(config::system_account_name,
                                         config::system_account_name,
-                                        "rewardplans"_n, 0);
+                                        "rewardplans"_n, name{});
    BOOST_REQUIRE(!data.empty());
    const auto plan = abi_ser.binary_to_variant(
       "reward_epoch_plan", data, abi_serializer::create_yield_function(abi_serializer_max_time));
@@ -822,6 +879,42 @@ BOOST_FIXTURE_TEST_CASE( producer_configuration_rejects_legacy_reward_override, 
          ("schedule_start", start_time)
          ("reward_epoch_start", start_time)
          ("initial_block_reward", core_sym::from_string("0.8000"))));
+} FC_LOG_AND_RETHROW()
+
+BOOST_FIXTURE_TEST_CASE( epoch_boundary_materializes_pending_voter_state, eosio_system_tester ) try {
+   const name producer = "producer1111"_n;
+   const name voter = "alice1111111"_n;
+   setup_producer_accounts({producer});
+   BOOST_REQUIRE_EQUAL(success(), regproducer(producer));
+   issue_and_transfer(voter, core_sym::from_string("100.0000"), config::system_account_name);
+   BOOST_REQUIRE_EQUAL(success(), setprodcfg());
+
+   BOOST_REQUIRE_EQUAL(success(), addvote(voter, core_sym::from_string("100.0000")));
+   BOOST_REQUIRE_EQUAL(success(), vote(voter, {producer}));
+   BOOST_REQUIRE(!get_row_by_account(config::system_account_name,
+                                     config::system_account_name,
+                                     "pendingvote"_n, voter).empty());
+   BOOST_REQUIRE(!get_row_by_account("voter.reward"_n, "voter.reward"_n,
+                                     "pendingvote"_n, voter).empty());
+
+   // Cross the one-hour reward boundary and allow bounded onblock sealing to
+   // finish. Both contracts must materialize the voter without requiring a
+   // later vote or claim action from that account.
+   produce_block(fc::hours(2));
+   produce_blocks(100);
+
+   BOOST_REQUIRE(get_row_by_account(config::system_account_name,
+                                    config::system_account_name,
+                                    "pendingvote"_n, voter).empty());
+   BOOST_REQUIRE(get_row_by_account("voter.reward"_n, "voter.reward"_n,
+                                    "pendingvote"_n, voter).empty());
+   const auto voter_info = get_voter_info(voter);
+   BOOST_REQUIRE(!voter_info.is_null());
+   BOOST_REQUIRE_EQUAL(core_sym::from_string("100.0000").get_amount(),
+                       voter_info["votes"].as_int64());
+   const auto producer_info = get_producer_info(producer);
+   BOOST_REQUIRE_EQUAL(core_sym::from_string("100.0000").get_amount(),
+                       producer_info["total_votes"].as_int64());
 } FC_LOG_AND_RETHROW()
 
 BOOST_FIXTURE_TEST_CASE( producer_register_unregister, eosio_system_tester ) try {
@@ -1114,8 +1207,6 @@ BOOST_FIXTURE_TEST_CASE( vote_for_producer, eosio_system_tester, * boost::unit_t
    //bob111111111 makes stake
    BOOST_REQUIRE_EQUAL( success(), addvote( "bob111111111", core_sym::from_string("11.0000"), core_sym::from_string("0.1111") ) );
    BOOST_REQUIRE_EQUAL( core_sym::from_string("1988.8889"), get_balance( "bob111111111" ) );
-   BOOST_REQUIRE_EQUAL( asset::from_string("11.1111 GLON"),
-                        get_balance( "bob111111111", symbol(4, "GLON") ) );
    REQUIRE_MATCHING_OBJECT( voter( "bob111111111", core_sym::from_string("11.1111") ), get_voter_info( "bob111111111" ) );
 
    //bob111111111 votes for alice1111111
@@ -1148,8 +1239,6 @@ BOOST_FIXTURE_TEST_CASE( vote_for_producer, eosio_system_tester, * boost::unit_t
 
    //carol1111111 unstakes part of the stake
    BOOST_REQUIRE_EQUAL( success(), subvote( "carol1111111", core_sym::from_string("2.0000"), core_sym::from_string("0.0002")/*"2.0000 EOS", "0.0002 EOS"*/ ) );
-   BOOST_REQUIRE_EQUAL( asset::from_string("20.2220 GLON"),
-                        get_balance( "carol1111111", symbol(4, "GLON") ) );
 
    //should decrease alice1111111's total_votes
    prod = get_producer_info( "alice1111111" );

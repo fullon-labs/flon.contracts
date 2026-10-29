@@ -413,17 +413,20 @@ namespace eosiosystem {
    typedef eosio::singleton<"bpstakecfg"_n, bp_stake_config> bp_stake_config_singleton;
 
    struct [[eosio::table, eosio::contract("flon.system")]] bp_self_stake {
-      name  owner;
-      asset staked;
+      name                       owner;
+      asset                      staked;
+      binary_extension<uint64_t> generation;
+      binary_extension<bool>     committed;
 
       uint64_t primary_key() const { return owner.value; }
    };
    typedef eosio::multi_index<"bpstakes"_n, bp_self_stake> bp_self_stake_table;
 
    struct [[eosio::table, eosio::contract("flon.system")]] bp_stake_refund {
-      name           owner;
-      asset          quantity;
-      time_point_sec available_at;
+      name                       owner;
+      asset                      quantity;
+      time_point_sec             available_at;
+      binary_extension<uint64_t> generation;
 
       uint64_t primary_key() const { return owner.value; }
    };
@@ -968,6 +971,10 @@ namespace eosiosystem {
          [[eosio::action]]
          void claimbpstake( const name& owner );
 
+         /** Cancel a pending BP self-stake refund and restore it to the same lifecycle. */
+         [[eosio::action]]
+         void cancelbpref( const name& owner );
+
          /**
           * Action to permanently transition to Savanna consensus.
           * Create the first generation of finalizer policy and activate
@@ -1263,6 +1270,7 @@ namespace eosiosystem {
          using stakebp_action = eosio::action_wrapper<"stakebp"_n, &system_contract::stakebp>;
          using unstakebp_action = eosio::action_wrapper<"unstakebp"_n, &system_contract::unstakebp>;
          using claimbpstake_action = eosio::action_wrapper<"claimbpstake"_n, &system_contract::claimbpstake>;
+         using cancelbpref_action = eosio::action_wrapper<"cancelbpref"_n, &system_contract::cancelbpref>;
          using voteproducer_action = eosio::action_wrapper<"voteproducer"_n, &system_contract::voteproducer>;
          using votealloc_action = eosio::action_wrapper<"votealloc"_n, &system_contract::votealloc>;
          // using voteupdate_action = eosio::action_wrapper<"voteupdate"_n, &system_contract::voteupdate>;

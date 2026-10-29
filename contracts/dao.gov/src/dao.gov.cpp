@@ -1,7 +1,6 @@
 #include <dao.gov/dao.gov.hpp>
 
 #include <eosio/action.hpp>
-#include <flon.token/flon.token.hpp>
 
 #include <limits>
 
@@ -112,6 +111,8 @@ void dao_governance::init(name admin, name power_source, symbol governance_symbo
    eosio::check(eosio::is_account(admin), "admin account does not exist");
    eosio::check(eosio::is_account(power_source), "power source account does not exist");
    eosio::check(governance_symbol.is_valid(), "invalid governance symbol");
+   eosio::check(governance_symbol.code() == eosio::symbol_code("POWER"),
+                "governance symbol must be POWER");
    global_singleton global(get_self(), get_self().value);
    eosio::check(!global.exists(), "already initialized");
    global.set({admin, power_source, governance_symbol, 0, 0, 0,
@@ -324,18 +325,6 @@ void dao_governance::sealadmin() {
 void dao_governance::setpower(name voter, asset power) {
    auto state = require_global();
    require_auth(state.power_source);
-   update_power(voter, power, state);
-}
-
-void dao_governance::syncpower(name voter) {
-   auto state = require_global();
-   eosio::check(eosio::is_account(voter), "voter account does not exist");
-   eosio::token::accounts balances("flon.token"_n, voter.value);
-   const auto balance = balances.find(state.governance_symbol.code().raw());
-   const asset power = balance == balances.end()
-      ? asset(0, state.governance_symbol) : balance->balance;
-   eosio::check(power.symbol == state.governance_symbol,
-                "governance token precision mismatch");
    update_power(voter, power, state);
 }
 

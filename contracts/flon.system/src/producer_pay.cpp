@@ -566,23 +566,51 @@ namespace eosiosystem {
       if (seal.phase == static_cast<uint8_t>(reward_seal_phase::applying_deltas) &&
           processed < max_rows) {
          pending_vote_deltas_table deltas(get_self(), get_self().value);
-         auto delta = deltas.begin();
-         while (delta != deltas.end() && processed < max_rows) {
-            auto producer_itr = _producers.find(delta->producer.value);
-            check(producer_itr != _producers.end(), "pending vote producer not found");
-            _producers.modify(producer_itr, same_payer, [&](auto& row) {
-               row.total_votes += delta->votes_delta;
-               check(row.total_votes >= 0, "producer's elected votes can not be negative");
-            });
-            delta = deltas.erase(delta);
-            ++processed;
+         if (seal.stage == 0) {
+            auto delta = deltas.begin();
+            while (delta != deltas.end() && processed < max_rows) {
+               auto producer_itr = _producers.find(delta->producer.value);
+               check(producer_itr != _producers.end(), "pending vote producer not found");
+               _producers.modify(producer_itr, same_payer, [&](auto& row) {
+                  row.total_votes += delta->votes_delta;
+                  check(row.total_votes >= 0, "producer's elected votes can not be negative");
+               });
+               delta = deltas.erase(delta);
+               ++processed;
+            }
+            if (delta == deltas.end()) {
+               seal.stage = 1;
+               seal.cursor = name{};
+            }
+         }
+
+         // Keep the canonical voter row and exact allocation table on the same
+         // Epoch boundary as producer.total_votes.  The old lazy-only path
+         // required a later voter action and could leave pendingvote rows
+         // indefinitely after the aggregate deltas had already been consumed.
+         if (seal.stage == 1 && processed < max_rows) {
+            pending_voters_table pending_votes(get_self(), get_self().value);
+            auto pending = seal.cursor.value
+               ? pending_votes.upper_bound(seal.cursor.value) : pending_votes.begin();
+            while (pending != pending_votes.end() && processed < max_rows) {
+               const name voter = pending->voter;
+               const uint64_t activation_epoch = pending->activation_epoch;
+               seal.cursor = voter;
+               ++pending;
+               if (activation_epoch <= seal.epoch_id) materialize_pending_vote(voter);
+               ++processed;
+            }
+            if (pending == pending_votes.end()) {
+               seal.stage = 2;
+               seal.cursor = name{};
+            }
          }
 
          flon::voter_reward::epoch_state::table voter_epoch_state(
             voter_reward_account, voter_reward_account.value);
          auto voter_state = voter_epoch_state.exists()
             ? voter_epoch_state.get() : flon::voter_reward::epoch_state{};
-         if (voter_state.next_epoch_to_close == seal.epoch_id) {
+         if (seal.stage == 2 && voter_state.next_epoch_to_close == seal.epoch_id) {
             flon::voter_reward::sealepoch_action seal_voter_epoch{
                voter_reward_account, {{get_self(), active_permission}}
             };
@@ -590,7 +618,7 @@ namespace eosiosystem {
             voter_state = voter_epoch_state.exists()
                ? voter_epoch_state.get() : flon::voter_reward::epoch_state{};
          }
-         if (deltas.begin() == deltas.end() &&
+         if (seal.stage == 2 && deltas.begin() == deltas.end() &&
              voter_state.next_epoch_to_close > seal.epoch_id) {
             auto epoch_itr = epochs.find(seal.epoch_id);
             if (epoch_itr != epochs.end()) {

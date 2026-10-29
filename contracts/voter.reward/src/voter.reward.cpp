@@ -286,6 +286,29 @@ void voter_reward::sealepoch(uint64_t epoch_id, uint16_t max_steps) {
          ++processed;
       }
       if (delta_itr == _producer_delta_tbl.end()) {
+         seal.phase = 3;
+         seal.cursor = name{};
+      }
+   }
+
+   // Materialize every voter whose queued change becomes effective at this
+   // boundary.  Previously this was deferred until that voter submitted a
+   // later action (for example claimrewards), leaving the voter row and exact
+   // allocation table stale even though the aggregate producer deltas had
+   // already been applied.  Keep the scan bounded by max_steps so Epoch
+   // sealing remains safe to advance from onblock.
+   if (seal.phase == 3 && processed < max_steps) {
+      auto pending_itr = seal.cursor.value
+         ? _pending_vote_tbl.upper_bound(seal.cursor.value) : _pending_vote_tbl.begin();
+      while (pending_itr != _pending_vote_tbl.end() && processed < max_steps) {
+         const name voter = pending_itr->owner;
+         const uint64_t activation_epoch = pending_itr->activation_epoch;
+         seal.cursor = voter;
+         ++pending_itr;
+         if (activation_epoch <= epoch_id) materialize_pending(voter);
+         ++processed;
+      }
+      if (pending_itr == _pending_vote_tbl.end()) {
          epoch_state_value.next_epoch_to_close += 1;
          _epoch_state_tbl.set(epoch_state_value, get_self());
          if (_seal_state_tbl.exists()) _seal_state_tbl.remove();

@@ -87,7 +87,6 @@ class [[eosio::contract("dao.gov")]] dao_governance : public eosio::contract {
                                     uint8_t risk_level, bool enabled);
    [[eosio::action]] void sealadmin();
    [[eosio::action]] void setpower(name voter, asset power);
-   [[eosio::action]] void syncpower(name voter);
    [[eosio::action]] void propose(name proposer, name proposal_type,
                                   string title, string summary,
                                   checksum256 content_hash,

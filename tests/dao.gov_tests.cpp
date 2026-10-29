@@ -14,7 +14,7 @@ using mvo = fc::mutable_variant_object;
 
 class dao_gov_tester : public tester {
  public:
-   const symbol glon_symbol{8, "GLON"};
+   const symbol power_symbol{8, "POWER"};
 
    dao_gov_tester() {
       produce_blocks(2);
@@ -37,10 +37,10 @@ class dao_gov_tester : public tester {
       BOOST_REQUIRE_EQUAL(success(), gov("dao.gov"_n, "init"_n,
          mvo()("admin", "dao.admin"_n)
               ("power_source", "powersource"_n)
-              ("governance_symbol", glon_symbol)));
+              ("governance_symbol", power_symbol)));
       BOOST_REQUIRE_EQUAL(success(), gov("dao.admin"_n, "setconfig"_n,
-         mvo()("proposal_threshold", asset(500'000'000, glon_symbol))
-              ("endorsement_threshold", asset(100'000'000, glon_symbol))
+         mvo()("proposal_threshold", asset(500'000'000, power_symbol))
+              ("endorsement_threshold", asset(100'000'000, power_symbol))
               ("required_endorsements", 1)
               ("endorsement_seconds", 60)
               ("voting_delay_seconds", 10)
@@ -71,10 +71,10 @@ class dao_gov_tester : public tester {
       return base_tester::push_action(std::move(act), signer.to_uint64_t());
    }
 
-   action_result set_power(name voter, int64_t whole_glon) {
+   action_result set_power(name voter, int64_t whole_power) {
       return gov("powersource"_n, "setpower"_n,
                  mvo()("voter", voter)
-                      ("power", asset(whole_glon * 100'000'000, glon_symbol)));
+                      ("power", asset(whole_power * 100'000'000, power_symbol)));
    }
 
    action_result set_risk(uint8_t level, int64_t min_total,
@@ -82,12 +82,12 @@ class dao_gov_tester : public tester {
                           uint16_t min_support, int64_t proposer) {
       return gov("flon"_n, "setriskcfg"_n,
          mvo()("risk_level", level)
-              ("min_total_power", asset(min_total * 100'000'000, glon_symbol))
+              ("min_total_power", asset(min_total * 100'000'000, power_symbol))
               ("quorum_bps", quorum)
               ("approval_bps", approval)
               ("min_support_bps", min_support)
-              ("proposal_threshold", asset(proposer * 100'000'000, glon_symbol))
-              ("endorsement_threshold", asset(100'000'000, glon_symbol))
+              ("proposal_threshold", asset(proposer * 100'000'000, power_symbol))
+              ("endorsement_threshold", asset(100'000'000, power_symbol))
               ("min_endorsement_bps", 0)
               ("required_endorsements", 1)
               ("endorsement_seconds", 60)
@@ -105,8 +105,8 @@ class dao_gov_tester : public tester {
    }
 
    variant_object config_values(int64_t proposal_threshold = 500'000'000) {
-      return mvo()("proposal_threshold", asset(proposal_threshold, glon_symbol))
-                  ("endorsement_threshold", asset(100'000'000, glon_symbol))
+      return mvo()("proposal_threshold", asset(proposal_threshold, power_symbol))
+                  ("endorsement_threshold", asset(100'000'000, power_symbol))
                   ("required_endorsements", 1)
                   ("endorsement_seconds", 60)
                   ("voting_delay_seconds", 10)
@@ -198,14 +198,14 @@ BOOST_FIXTURE_TEST_CASE(snapshot_vote_and_finalize, dao_gov_tester) try {
    const auto activated = proposal(1);
    BOOST_REQUIRE_EQUAL(activated["snapshot_sequence"].as_uint64(), 3u);
    BOOST_REQUIRE_EQUAL(activated["snapshot_total_power"].as<asset>(),
-                       asset(200 * 100'000'000LL, glon_symbol));
+                       asset(200 * 100'000'000LL, power_symbol));
    BOOST_REQUIRE_EQUAL(activated["snapshot_quorum_bps"].as_uint64(), 1000u);
    BOOST_REQUIRE_EQUAL(activated["snapshot_approval_bps"].as_uint64(), 5001u);
 
    // Governance rules are frozen at activation and cannot be changed retroactively.
    BOOST_REQUIRE_EQUAL(success(), gov("dao.admin"_n, "setconfig"_n,
-      mvo()("proposal_threshold", asset(500'000'000, glon_symbol))
-           ("endorsement_threshold", asset(100'000'000, glon_symbol))
+      mvo()("proposal_threshold", asset(500'000'000, power_symbol))
+           ("endorsement_threshold", asset(100'000'000, power_symbol))
            ("required_endorsements", 1)("endorsement_seconds", 60)
            ("voting_delay_seconds", 10)("voting_seconds", 60)
            ("quorum_bps", 10000)("approval_bps", 10000)
@@ -213,7 +213,7 @@ BOOST_FIXTURE_TEST_CASE(snapshot_vote_and_finalize, dao_gov_tester) try {
            ("max_actions", 5)("max_action_bytes", 2048)
            ("max_total_action_bytes", 4096)));
 
-   // Later GLON changes must not rewrite the proposal snapshot.
+   // Later governance power changes must not rewrite the proposal snapshot.
    BOOST_REQUIRE_EQUAL(success(), set_power("bob"_n, 0));
    produce_block(fc::seconds(11));
    BOOST_REQUIRE_EQUAL(success(), gov("bob"_n, "castvote"_n,
@@ -230,9 +230,9 @@ BOOST_FIXTURE_TEST_CASE(snapshot_vote_and_finalize, dao_gov_tester) try {
    const auto finalized = proposal(1);
    BOOST_REQUIRE_EQUAL(finalized["status"].as_uint64(), 4u);
    BOOST_REQUIRE_EQUAL(finalized["for_votes"].as<asset>(),
-                       asset(60 * 100'000'000LL, glon_symbol));
+                       asset(60 * 100'000'000LL, power_symbol));
    BOOST_REQUIRE_EQUAL(finalized["against_votes"].as<asset>(),
-                       asset(40 * 100'000'000LL, glon_symbol));
+                       asset(40 * 100'000'000LL, power_symbol));
 } FC_LOG_AND_RETHROW()
 
 BOOST_FIXTURE_TEST_CASE(thresholds_duplicate_endorsement_and_cancel, dao_gov_tester) try {
@@ -332,7 +332,7 @@ BOOST_FIXTURE_TEST_CASE(timelock_allowlist_and_permissionless_execute, dao_gov_t
       mvo()("proposal_id", 1)));
    BOOST_REQUIRE_EQUAL(proposal(1)["status"].as_uint64(), 7u);
    BOOST_REQUIRE_EQUAL(governance_config()["proposal_threshold"].as<asset>(),
-                       asset(600'000'000, glon_symbol));
+                       asset(600'000'000, power_symbol));
 } FC_LOG_AND_RETHROW()
 
 BOOST_FIXTURE_TEST_CASE(expired_execution_window, dao_gov_tester) try {
@@ -362,11 +362,11 @@ BOOST_FIXTURE_TEST_CASE(risk_policy_requires_flon_and_rejects_unclassified_actio
    BOOST_REQUIRE_EQUAL(error("missing authority of flon"),
       gov("dao.admin"_n, "setriskcfg"_n,
          mvo()("risk_level", 1)
-              ("min_total_power", asset(10 * 100'000'000LL, glon_symbol))
+              ("min_total_power", asset(10 * 100'000'000LL, power_symbol))
               ("quorum_bps", 4000)("approval_bps", 6000)
               ("min_support_bps", 3000)
-              ("proposal_threshold", asset(5 * 100'000'000LL, glon_symbol))
-              ("endorsement_threshold", asset(100'000'000, glon_symbol))
+              ("proposal_threshold", asset(5 * 100'000'000LL, power_symbol))
+              ("endorsement_threshold", asset(100'000'000, power_symbol))
               ("min_endorsement_bps", 0)("required_endorsements", 1)
               ("endorsement_seconds", 60)("voting_delay_seconds", 10)
               ("voting_seconds", 60)("timelock_seconds", 60)

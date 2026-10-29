@@ -79,6 +79,18 @@ namespace eosiosystem {
       if (stake_config_table.exists()) {
          check_min_bp_self_stake(producer, stake_config_table.get());
       }
+
+      // Registration commits the current self-stake lifecycle. Unregistering
+      // does not clear this bit: that lifecycle remains subject to the
+      // configured withdrawal delay until it is fully settled.
+      bp_self_stake_table self_stakes(get_self(), get_self().value);
+      auto self_stake = self_stakes.find(producer.value);
+      if (self_stake != self_stakes.end()) {
+         self_stakes.modify(self_stake, same_payer, [&](auto& row) {
+            if (!row.generation.has_value()) row.generation = uint64_t{1};
+            row.committed = true;
+         });
+      }
       auto prod = _producers.find( producer.value );
       const auto ct = current_time_point();
 
@@ -209,6 +221,10 @@ namespace eosiosystem {
       check(quantity.symbol == core_symbol(), "BP self-stake must use the core symbol");
       check(quantity.amount > 0, "BP self-stake must be positive");
 
+      bp_stake_refund_table refunds(get_self(), get_self().value);
+      check(refunds.find(owner.value) == refunds.end(),
+            "pending BP self-stake refund must be claimed or cancelled first");
+
       eosio::token::transfer_action transfer_act{token_account, {{owner, active_permission}}};
       transfer_act.send(owner, stake_account, quantity, "BP self-stake");
 
@@ -218,9 +234,25 @@ namespace eosiosystem {
          self_stakes.emplace(owner, [&](auto& row) {
             row.owner = owner;
             row.staked = quantity;
+            row.generation = uint64_t{1};
+            const auto producer = _producers.find(owner.value);
+            row.committed = producer != _producers.end() && producer->active();
          });
       } else {
-         self_stakes.modify(stake, same_payer, [&](auto& row) { row.staked += quantity; });
+         const bool starts_new_lifecycle = stake->staked.amount == 0;
+         const auto producer = _producers.find(owner.value);
+         const bool active_producer = producer != _producers.end() && producer->active();
+         self_stakes.modify(stake, same_payer, [&](auto& row) {
+            const uint64_t current_generation = row.generation.has_value() ? row.generation.value() : uint64_t{1};
+            if (starts_new_lifecycle) {
+               row.generation = current_generation + 1;
+               row.committed = active_producer;
+            } else {
+               if (!row.generation.has_value()) row.generation = current_generation;
+               if (!row.committed.has_value()) row.committed = producer != _producers.end();
+            }
+            row.staked += quantity;
+         });
       }
    }
 
@@ -235,26 +267,40 @@ namespace eosiosystem {
 
       const asset remaining = stake->staked - quantity;
       auto producer = _producers.find(owner.value);
+      const bool committed = stake->committed.has_value() ? stake->committed.value() : producer != _producers.end();
       if (producer != _producers.end() && producer->active()) {
          const auto config = get_bp_stake_config(get_self(), core_symbol());
          check(remaining >= config.min_self_stake,
                "registered producer must retain the minimum self-stake");
       }
 
+      if (!committed) {
+         self_stakes.modify(stake, same_payer, [&](auto& row) {
+            if (!row.generation.has_value()) row.generation = uint64_t{1};
+            row.committed = false;
+            row.staked = remaining;
+         });
+         eosio::token::transfer_action transfer_act{token_account, {{stake_account, active_permission}}};
+         transfer_act.send(stake_account, owner, quantity, "uncommitted BP self-stake refund");
+         return;
+      }
+
       bp_stake_refund_table refunds(get_self(), get_self().value);
       check(refunds.find(owner.value) == refunds.end(), "BP self-stake refund already pending");
       const auto config = get_bp_stake_config(get_self(), core_symbol());
+      const uint64_t generation = stake->generation.has_value() ? stake->generation.value() : uint64_t{1};
       refunds.emplace(owner, [&](auto& row) {
          row.owner = owner;
          row.quantity = quantity;
          row.available_at = time_point_sec(current_time_point()) + seconds(config.unstake_delay_sec);
+         row.generation = generation;
       });
 
-      if (remaining.amount == 0) {
-         self_stakes.erase(stake);
-      } else {
-         self_stakes.modify(stake, same_payer, [&](auto& row) { row.staked = remaining; });
-      }
+      self_stakes.modify(stake, same_payer, [&](auto& row) {
+         row.staked = remaining;
+         row.generation = generation;
+         row.committed = true;
+      });
    }
 
    void system_contract::claimbpstake(const name& owner) {
@@ -264,10 +310,45 @@ namespace eosiosystem {
       check(refund->available_at <= time_point_sec(current_time_point()),
             "BP self-stake refund is not available yet");
 
+      bp_self_stake_table self_stakes(get_self(), get_self().value);
+      auto stake = self_stakes.find(owner.value);
+      if (stake != self_stakes.end() && refund->generation.has_value()) {
+         check((stake->generation.has_value() ? stake->generation.value() : uint64_t{1}) == refund->generation.value(),
+               "BP self-stake refund generation mismatch");
+      }
+
       const asset quantity = refund->quantity;
       refunds.erase(refund);
       eosio::token::transfer_action transfer_act{token_account, {{stake_account, active_permission}}};
       transfer_act.send(stake_account, owner, quantity, "BP self-stake refund");
+   }
+
+   void system_contract::cancelbpref(const name& owner) {
+      require_auth(owner);
+      bp_stake_refund_table refunds(get_self(), get_self().value);
+      auto refund = refunds.require_find(owner.value, "BP self-stake refund not found");
+      const asset quantity = refund->quantity;
+      const uint64_t generation = refund->generation.has_value() ? refund->generation.value() : uint64_t{1};
+
+      bp_self_stake_table self_stakes(get_self(), get_self().value);
+      auto stake = self_stakes.find(owner.value);
+      if (stake == self_stakes.end()) {
+         self_stakes.emplace(owner, [&](auto& row) {
+            row.owner = owner;
+            row.staked = quantity;
+            row.generation = generation;
+            row.committed = true;
+         });
+      } else {
+         check((stake->generation.has_value() ? stake->generation.value() : generation) == generation,
+               "BP self-stake refund generation mismatch");
+         self_stakes.modify(stake, same_payer, [&](auto& row) {
+            row.staked += quantity;
+            row.generation = generation;
+            row.committed = true;
+         });
+      }
+      refunds.erase(refund);
    }
 
    void system_contract::update_elected_producers( const block_timestamp& block_time ) {
@@ -734,18 +815,6 @@ namespace eosiosystem {
       eosio::token::transfer_action transfer_act{ token_account, { {voter, active_permission} } };
       transfer_act.send( voter, vote_account, vote_staked, "addvote" );
 
-      asset glon_quantity(votes, symbol(symbol_code("GLON"), vote_staked.symbol.precision()));
-      eosio::token::issue_action issue_glon_act{ token_account, { {get_self(), active_permission} } };
-      issue_glon_act.send( get_self(), glon_quantity, "governance receipt for vote stake" );
-
-      eosio::token::transfer_action transfer_glon_act{ token_account, { {get_self(), active_permission} } };
-      transfer_glon_act.send( get_self(), voter, glon_quantity, "governance receipt for vote stake" );
-
-      if (eosio::is_account("dao.gov"_n)) {
-         eosio::action({get_self(), active_permission}, "dao.gov"_n, "syncpower"_n,
-                       std::make_tuple(voter)).send();
-      }
-
       materialize_pending_vote(voter);
       auto voter_itr = _voters.find( voter.value );
       if( voter_itr != _voters.end() ) {
@@ -765,6 +834,15 @@ namespace eosiosystem {
                                       ? voter_itr->producers : pending_itr->producers;
       const uint64_t activation_epoch = next_vote_epoch();
       queue_vote_change(voter, target_votes, target_producers, activation_epoch);
+
+      // Governance power is an internal DAO ledger derived directly from the
+      // voter's target stake. It is not represented by a transferable token.
+      if (eosio::is_account("dao.gov"_n)) {
+         const asset governance_power(
+            target_votes, symbol(symbol_code("POWER"), vote_staked.symbol.precision()));
+         eosio::action({get_self(), active_permission}, "dao.gov"_n, "setpower"_n,
+                       std::make_tuple(voter, governance_power)).send();
+      }
 
       flon::voter_reward::addvote_action addvote_act{ voter_reward_account, { {get_self(), active_permission}, {voter, active_permission} } };
       addvote_act.send( voter, votes, activation_epoch );
@@ -800,22 +878,16 @@ namespace eosiosystem {
       vote_refund_table vote_refund_tbl( get_self(), voter.value );
       CHECKC( vote_refund_tbl.find( voter.value ) == vote_refund_tbl.end(), err::VOTE_REFUND_ERROR, "This account already has a vote refund" );
 
-      asset glon_quantity(votes, symbol(symbol_code("GLON"), vote_staked.symbol.precision()));
-      eosio::token::transfer_action return_glon_act{
-         token_account, { {voter, active_permission}, {get_self(), active_permission} }
-      };
-      return_glon_act.send( voter, get_self(), glon_quantity, "return governance receipt" );
-
-      eosio::token::retire_action retire_glon_act{ token_account, { {get_self(), active_permission} } };
-      retire_glon_act.send( glon_quantity, "retire governance receipt" );
+      const uint64_t activation_epoch = next_vote_epoch();
+      const int64_t target_votes = current_target_votes - votes;
+      queue_vote_change(voter, target_votes, target_producers, activation_epoch);
 
       if (eosio::is_account("dao.gov"_n)) {
-         eosio::action({get_self(), active_permission}, "dao.gov"_n, "syncpower"_n,
-                       std::make_tuple(voter)).send();
+         const asset governance_power(
+            target_votes, symbol(symbol_code("POWER"), vote_staked.symbol.precision()));
+         eosio::action({get_self(), active_permission}, "dao.gov"_n, "setpower"_n,
+                       std::make_tuple(voter, governance_power)).send();
       }
-
-      const uint64_t activation_epoch = next_vote_epoch();
-      queue_vote_change(voter, current_target_votes - votes, target_producers, activation_epoch);
 
       _voters.modify( voter_itr, same_payer, [&]( auto& v ) {
          v.last_unvoted_time  = now;

@@ -251,6 +251,8 @@ fucli -u "$RPC_URL" push action flon stakebp \
 
 质押 FLON 转入 `flon.stake`，记录在 `flon::bpstakes`。最低金额以 `bpstakecfg` 链上值为准。
 
+`bpstakes` 使用 `generation` 标识每轮自质押生命周期，并使用 `committed` 标识该轮保证金是否已经用于 BP 注册。BP 自质押不会生成 GLON，也不计入 DAO 治理票权。
+
 ### 6.2 注册 Candidate
 
 单签 block key：
@@ -283,11 +285,21 @@ fucli -u "$RPC_URL" push action flon unstakebp \
   '["<BP_ACCOUNT>","<QUANTITY> FLON"]' -p <BP_ACCOUNT>@active
 ```
 
-注册状态下只能取出超过最低门槛的部分，并且同一账户一次只能存在一笔待退自有质押。等待期结束后：
+从未用于 BP 注册的当前 `generation`（`committed=false`）可通过 `unstakebp` 立即赎回；一旦该轮自质押完成过 `regproducer` 或 `regproducer2`，即永久标记为 `committed=true`，即使随后退出竞选，该轮退款仍执行链上等待期。注册状态下只能取出超过最低门槛的部分，并且同一账户一次只能存在一笔待退自有质押。
+
+待退款尚未领取时，`stakebp` 会拒绝开启新一轮质押，避免新旧生命周期混合。用户可等待期结束后领取：
 
 ```bash
 fucli -u "$RPC_URL" push action flon claimbpstake '["<BP_ACCOUNT>"]' -p <BP_ACCOUNT>@active
 ```
+
+也可以在领取前取消该笔赎回，将资金恢复到原 `generation`（仍保持 `committed=true`）：
+
+```bash
+fucli -u "$RPC_URL" push action flon cancelbpref '["<BP_ACCOUNT>"]' -p <BP_ACCOUNT>@active
+```
+
+当已提交生命周期的退款全部领取完成后，再次 `stakebp` 会创建新的 `generation`；新一轮在注册前仍可立即赎回。
 
 ## 7. Active BP 运行和领奖
 

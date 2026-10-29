@@ -339,12 +339,6 @@ namespace eosiosystem {
       check( system_token_supply.symbol == core, "specified core symbol does not exist (precision mismatch)" );
       check( system_token_supply.amount > 0, "system token supply must be greater than 0" );
 
-      const symbol glon_symbol(symbol_code("GLON"), core.precision());
-      auto glon_supply = eosio::token::get_supply(token_account, glon_symbol.code());
-      check( glon_supply.symbol == glon_symbol, "GLON must exist with the same precision as the core token" );
-      check( eosio::token::get_issuer(token_account, glon_symbol.code()) == get_self(),
-             "GLON issuer must be the system account" );
-
       // init gas account' core asset in token contract here,
       // so that gas fees can be deducted automatically for resource usage in native of chain
       check( is_account(token_account), "gas account does not exist");
