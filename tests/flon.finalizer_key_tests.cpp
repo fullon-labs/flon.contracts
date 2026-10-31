@@ -31,6 +31,9 @@ FC_REFLECT(last_prop_finalizers_info, (last_proposed_finalizers))
 struct finalizer_key_tester : eosio_system_tester {
    static const std::vector<key_pair_t> key_pair;
 
+   explicit finalizer_key_tester(setup_level level = setup_level::full)
+      : eosio_system_tester(level) {}
+
    fc::variant get_finalizer_key_info( uint64_t id ) {
       vector<char> data = get_row_by_id( config::system_account_name, config::system_account_name, "finkeys"_n, id );
       return data.empty() ? fc::variant() : abi_ser.binary_to_variant( "finalizer_key_info", data, abi_serializer::create_yield_function(abi_serializer_max_time) );
@@ -554,28 +557,39 @@ BOOST_FIXTURE_TEST_CASE(switchtosvnn_missing_authority_tests, finalizer_key_test
 }
 FC_LOG_AND_RETHROW()
 
-BOOST_FIXTURE_TEST_CASE(switchtosvnn_not_enough_finalizer_keys_tests, finalizer_key_tester) try {
-   auto producer_names = active_and_vote_producers();
-
-   // Register 20 finalizer keys
-   register_finalizer_keys(producer_names, 20);
-
-   // The missing key belongs to an active producer.
-   BOOST_REQUIRE_EQUAL( wasm_assert_msg( "active producer defproduceru has no active finalizer key" ),
-                        push_action( config::system_account_name, "switchtosvnn"_n, mvo()) );
+BOOST_AUTO_TEST_CASE(switchtosvnn_not_enough_finalizer_keys_tests) try {
+   finalizer_key_tester test(eosio_system_tester::setup_level::deploy_contract);
+   BOOST_REQUIRE_EQUAL(test.wasm_assert_msg("active producer flon has no active finalizer key"),
+      test.push_action(config::system_account_name, "switchtosvnn"_n, mvo()));
 }
 FC_LOG_AND_RETHROW()
 
-BOOST_FIXTURE_TEST_CASE(switchtosvnn_rejects_unscheduled_substitute_test, finalizer_key_tester) try {
-   auto producer_names = active_and_vote_producers(22);
-   register_finalizer_keys(producer_names, 20);
-   BOOST_REQUIRE_EQUAL(success(), register_finalizer_key(
-      producer_names[21], key_pair[21].pub_key, key_pair[21].pop));
+BOOST_AUTO_TEST_CASE(switchtosvnn_rejects_unscheduled_substitute_test) try {
+   finalizer_key_tester test(eosio_system_tester::setup_level::deploy_contract);
+   const name unscheduled = "flon.token"_n;
+   BOOST_REQUIRE_EQUAL(test.success(), test.push_action(config::system_account_name,
+      "setalimits"_n, mvo()("account", unscheduled)("gas", uint64_t{1000000000})("is_unlimited", false)));
+   BOOST_REQUIRE_EQUAL(test.success(), test.regproducer(unscheduled));
+   BOOST_REQUIRE_EQUAL(test.success(), test.register_finalizer_key(
+      unscheduled, finalizer_key_tester::key_pair[0].pub_key,
+      finalizer_key_tester::key_pair[0].pop));
 
-   // A key from the 22nd voted producer cannot substitute for the missing
-   // key of the 21st producer in the active block-production schedule.
-   BOOST_REQUIRE_EQUAL( wasm_assert_msg( "active producer defproduceru has no active finalizer key" ),
-                        push_action( config::system_account_name, "switchtosvnn"_n, mvo()) );
+   // A registered key from an unscheduled producer cannot replace the
+   // missing key of the active producer.
+   BOOST_REQUIRE_EQUAL(test.wasm_assert_msg("active producer flon has no active finalizer key"),
+      test.push_action(config::system_account_name, "switchtosvnn"_n, mvo()));
+}
+FC_LOG_AND_RETHROW()
+
+BOOST_AUTO_TEST_CASE(switchtosvnn_active_schedule_success_test) try {
+   finalizer_key_tester test(eosio_system_tester::setup_level::deploy_contract);
+   BOOST_REQUIRE_EQUAL(test.success(), test.regproducer(config::system_account_name));
+   BOOST_REQUIRE_EQUAL(test.success(), test.register_finalizer_key(
+      config::system_account_name, finalizer_key_tester::key_pair[0].pub_key,
+      finalizer_key_tester::key_pair[0].pop));
+   BOOST_REQUIRE_EQUAL(test.success(),
+      test.push_action(config::system_account_name, "switchtosvnn"_n, mvo()));
+   BOOST_REQUIRE_EQUAL(1u, test.get_last_prop_finalizers_info().size());
 }
 FC_LOG_AND_RETHROW()
 
