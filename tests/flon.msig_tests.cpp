@@ -18,7 +18,7 @@ using mvo = fc::mutable_variant_object;
 
 class eosio_msig_tester : public tester {
 public:
-   eosio_msig_tester() {
+   eosio_msig_tester() : tester(setup_policy::full, db_read_mode::HEAD, 512 * 1024) {
       create_accounts( { "flon.msig"_n, "flon.stake"_n, "flon.ram"_n, "flon.fees"_n, "alice"_n, "bob"_n, "carol"_n ,
                "voter.reward"_n, "flon.vote"_n } );
       produce_block();
@@ -323,12 +323,6 @@ BOOST_FIXTURE_TEST_CASE( propose_with_wrong_requested_auth, eosio_msig_tester ) 
 
 
 BOOST_FIXTURE_TEST_CASE( big_transaction, eosio_msig_tester ) try {
-   //change `default_max_inline_action_size` to 512 KB
-   eosio::chain::chain_config params = control->get_global_properties().configuration;
-   params.max_inline_action_size = 512 * 1024;
-   base_tester::push_action( config::system_account_name, "setparams"_n, config::system_account_name, mutable_variant_object()
-                              ("params", params) );
-
    produce_blocks();
 
    vector<permission_level> perm = { { "alice"_n, config::active_name }, { "bob"_n, config::active_name } };

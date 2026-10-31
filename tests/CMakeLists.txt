@@ -35,6 +35,9 @@ enable_testing()
 # build unit test executable
 file(GLOB UNIT_TESTS "*.cpp" "*.hpp") # find all unit test suites
 add_chain_core_test_executable(unit_test ${UNIT_TESTS}) # build unit tests as one executable
+# The executable loads contract WASM and ABI files at runtime, including the
+# test-only contracts. Build those artifacts before the native test executable.
+add_dependencies(unit_test contracts_project)
 # mark test suites for execution
 foreach(TEST_SUITE ${UNIT_TESTS}) # create an independent target for each test suite
   execute_process(
