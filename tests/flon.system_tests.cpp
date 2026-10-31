@@ -749,6 +749,22 @@ BOOST_FIXTURE_TEST_CASE( stake_to_another_user_not_from_refund, eosio_system_tes
 BOOST_AUTO_TEST_SUITE_END()
 BOOST_AUTO_TEST_SUITE(eosio_system_producer_tests)
 
+BOOST_AUTO_TEST_CASE( account_setup_uses_current_gas_limits ) try {
+   eosio_system_tester test;
+   BOOST_REQUIRE_NO_THROW(test.create_account_with_resources("dave11111111"_n,
+      config::system_account_name, uint32_t{8000}));
+   BOOST_REQUIRE_NO_THROW(test.setup_producer_accounts({"defproducera"_n}));
+   for (const auto account : {"alice1111111"_n, "dave11111111"_n, "defproducera"_n}) {
+      uint64_t gas = 0;
+      bool unlimited = true;
+      test.control->get_resource_limits_manager().get_account_limits(account, gas, unlimited);
+      BOOST_REQUIRE_GT(gas, uint64_t{0});
+      BOOST_REQUIRE_LE(gas, uint64_t{1000000000});
+      BOOST_REQUIRE(!unlimited);
+   }
+}
+FC_LOG_AND_RETHROW()
+
 BOOST_AUTO_TEST_CASE( idle_block_interval_matches_core_limit ) try {
    eosio_system_tester test(eosio_system_tester::setup_level::deploy_contract);
    BOOST_REQUIRE_EQUAL(test.success(), test.push_action(config::system_account_name, "setibintervl"_n,

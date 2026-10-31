@@ -162,21 +162,13 @@ public:
                                    .active   = authority( get_public_key( a, "active" ) )
                                 });
 
-      trx.actions.emplace_back( get_action( config::system_account_name, "buyrambytes"_n, vector<permission_level>{{creator,config::active_name}},
-                                            mvo()
-                                            ("payer", creator)
-                                            ("receiver", a)
-                                            ("bytes", ram_bytes) )
-                              );
-      trx.actions.emplace_back( get_action( config::system_account_name, "delegatebw"_n, vector<permission_level>{{creator,config::active_name}},
-                                            mvo()
-                                            ("from", creator)
-                                            ("receiver", a)
-                                            ("stake_net_quantity", core_sym::from_string("10.0000") )
-                                            ("stake_cpu_quantity", core_sym::from_string("10.0000") )
-                                            ("transfer", 0 )
-                                          )
-                                );
+      // The current system contract uses Gas limits instead of RAM/CPU/NET
+      // purchases. Grant a finite limit in the account-creation transaction so
+      // the new account can pay for its initial RAM at transaction commit.
+      (void)ram_bytes;
+      trx.actions.emplace_back( get_action( config::system_account_name, "setalimits"_n,
+                                            vector<permission_level>{{config::system_account_name,config::active_name}},
+                                            mvo()("account", a)("gas", uint64_t{1000000000})("is_unlimited", false) ) );
 
       set_transaction_headers(trx);
       trx.sign( get_private_key( creator, "active" ), control->get_chain_id()  );
@@ -204,22 +196,12 @@ public:
                                    .active   = authority( get_public_key( a, "active" ) )
                                 });
 
-      trx.actions.emplace_back( get_action( config::system_account_name, "buyram"_n, vector<permission_level>{{creator,config::active_name}},
-                                            mvo()
-                                            ("payer", creator)
-                                            ("receiver", a)
-                                            ("quant", ramfunds) )
-                              );
-
-      trx.actions.emplace_back( get_action( config::system_account_name, "delegatebw"_n, vector<permission_level>{{creator,config::active_name}},
-                                            mvo()
-                                            ("from", creator)
-                                            ("receiver", a)
-                                            ("stake_net_quantity", net )
-                                            ("stake_cpu_quantity", cpu )
-                                            ("transfer", 0 )
-                                          )
-                                );
+      (void)ramfunds;
+      (void)net;
+      (void)cpu;
+      trx.actions.emplace_back( get_action( config::system_account_name, "setalimits"_n,
+                                            vector<permission_level>{{config::system_account_name,config::active_name}},
+                                            mvo()("account", a)("gas", uint64_t{1000000000})("is_unlimited", false) ) );
 
       set_transaction_headers(trx);
       trx.sign( get_private_key( creator, "active" ), control->get_chain_id()  );
@@ -608,6 +590,9 @@ public:
                                                   asset net = core_sym::from_string("80.0000")
                                                 )
    {
+      (void)ram;
+      (void)cpu;
+      (void)net;
       account_name creator(config::system_account_name);
       signed_transaction trx;
       set_transaction_headers(trx);
@@ -622,22 +607,9 @@ public:
                                          .active   = authority( get_public_key( a, "active" ) )
                                          });
 
-         trx.actions.emplace_back( get_action( config::system_account_name, "buyram"_n, vector<permission_level>{ {creator, config::active_name} },
-                                               mvo()
-                                               ("payer", creator)
-                                               ("receiver", a)
-                                               ("quant", ram) )
-                                   );
-
-         trx.actions.emplace_back( get_action( config::system_account_name, "delegatebw"_n, vector<permission_level>{ {creator, config::active_name} },
-                                               mvo()
-                                               ("from", creator)
-                                               ("receiver", a)
-                                               ("stake_net_quantity", net)
-                                               ("stake_cpu_quantity", cpu )
-                                               ("transfer", 0 )
-                                               )
-                                   );
+         trx.actions.emplace_back( get_action( config::system_account_name, "setalimits"_n,
+                                               vector<permission_level>{{config::system_account_name,config::active_name}},
+                                               mvo()("account", a)("gas", uint64_t{1000000000})("is_unlimited", false) ) );
       }
 
       set_transaction_headers(trx);
@@ -892,7 +864,7 @@ public:
    }
 
    action_result setprodcfg() {
-      auto start_time = control->pending_block_time();
+      auto start_time = control->pending_block_time() + fc::seconds(1);
       return push_action(config::system_account_name, "setprodcfg"_n, mvo()
             ("schedule_start", start_time)
             ("reward_epoch_start", start_time)
@@ -1061,7 +1033,6 @@ public:
       abi_serializer msig_abi_ser;
       {
          create_account_with_resources( "flon.msig"_n, config::system_account_name );
-         BOOST_REQUIRE_EQUAL( success(), buyram( "flon"_n, "flon.msig"_n, core_sym::from_string("5000.0000") ) );
          produce_block();
 
          auto trace = base_tester::push_action(config::system_account_name, "setpriv"_n,
@@ -1120,7 +1091,6 @@ public:
       {
          transfer( config::system_account_name, "alice1111111"_n, core_sym::from_string("100000000.0000"), config::system_account_name );
          BOOST_REQUIRE_EQUAL(success(), addvote( "alice1111111"_n, core_sym::from_string("60000000.0000")) );
-         BOOST_REQUIRE_EQUAL(success(), buyram( "alice1111111"_n, "alice1111111"_n, core_sym::from_string("30000000.0000") ) );
          BOOST_REQUIRE_EQUAL(success(), push_action("alice1111111"_n, "voteproducer"_n, mvo()
                                                     ("voter",  "alice1111111")
                                                     ("producers", vector<account_name>(producer_names.begin(), producer_names.begin()+num_producers))
