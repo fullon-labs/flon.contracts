@@ -144,32 +144,20 @@ namespace eosiosystem {
 
       check(!is_savanna_consensus(), "switchtosvnn can be run only once");
 
+      // The first finalizer policy must match the schedule that is actually
+      // producing blocks. Vote totals and eligibility can change while a new
+      // producer schedule is still pending, so selecting another top-voted
+      // producer here can silently replace a scheduled producer.
+      const auto active_producers = eosio::get_active_producers();
+      check(!active_producers.empty(), "active producer schedule is empty");
       std::vector< finalizer_auth_info > proposed_finalizers;
-      proposed_finalizers.reserve(_gstate.last_producer_schedule_size);
-
-      // Find a set of producers that meet all the normal requirements for
-      // being a proposer and also have an active finalizer key.
-      // The number of the producers must be equal to the number of producers
-      // in the last_producer_schedule.
-      auto idx = _producers.get_index<"prototalvote"_n>();
-      for( auto it = idx.cbegin(); it != idx.cend() && proposed_finalizers.size() < _gstate.last_producer_schedule_size && 0 < it->total_votes && it->active(); ++it ) {
-         auto finalizer = _finalizers.find( it->owner.value );
-         if( finalizer == _finalizers.end() ) {
-            // The producer is not in finalizers table, indicating it does not have an
-            // active registered finalizer key. Try next one.
-            continue;
-         }
-
-         // This should never happen. Double check the finalizer has an active key just in case
-         if( finalizer->active_key_binary.empty() ) {
-            continue;
-         }
-
+      proposed_finalizers.reserve(active_producers.size());
+      for( const auto& producer : active_producers ) {
+         const auto finalizer = _finalizers.find(producer.value);
+         check(finalizer != _finalizers.end() && !finalizer->active_key_binary.empty(),
+               "active producer " + producer.to_string() + " has no active finalizer key");
          proposed_finalizers.emplace_back(*finalizer);
       }
-
-      check( proposed_finalizers.size() == _gstate.last_producer_schedule_size,
-            "not enough top producers have registered finalizer keys, has " + std::to_string(proposed_finalizers.size()) + ", require " + std::to_string(_gstate.last_producer_schedule_size) );
 
       set_proposed_finalizers(std::move(proposed_finalizers));
       check( is_savanna_consensus(), "switching to Savanna failed" );

@@ -354,6 +354,10 @@ namespace eosiosystem {
 
    void system_contract::setibintervl( uint64_t idle_block_interval_ms ) {
       require_auth( get_self() );
+      // Core treats values above one hour as zero. Reject them here so the
+      // on-chain configuration cannot silently disagree with block production.
+      check(idle_block_interval_ms <= 3600 * 1000,
+            "idle block interval must not exceed one hour");
 
       producing_config_singleton pcs(get_self(), get_self().value);
       producing_config conf = pcs.get_or_default();

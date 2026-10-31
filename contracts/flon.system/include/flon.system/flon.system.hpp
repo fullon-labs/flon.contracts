@@ -601,7 +601,7 @@ namespace eosiosystem {
    // Defines new global state parameters.
    struct [[eosio::table("prodconf"), eosio::contract("flon.system")]] producing_config {
 
-      uint64_t             idle_block_interval_ms = 0;         ///< idle block interval in milliseconds, 0 means disable idle block
+      uint64_t             idle_block_interval_ms = 0;         ///< minimum time between empty blocks; 0 allows one in every slot
    };
 
 
@@ -955,6 +955,16 @@ namespace eosiosystem {
          [[eosio::action]]
          void resumeprod( const name& producer );
 
+         /**
+          * Clear a suspended producer's recovery cooldown. This privileged
+          * action does not resume the producer or erase its penalty history.
+          * The producer must still call resumeprod and enter probation.
+          *
+          * @param producer - suspended producer whose cooldown is cleared.
+          */
+         [[eosio::action]]
+         void resetbpcool( const name& producer );
+
          /** Configure the target Active BP schedule size during bootstrap. */
          [[eosio::action]]
          void setbpquorum( uint16_t active_bp_quorum );
@@ -1250,7 +1260,7 @@ namespace eosiosystem {
          /**
           * Set producing configuration
           *
-          * @param idle_block_interval_ms - the idle block interval in milliseconds. 0 means disable idle block.
+          * @param idle_block_interval_ms - minimum time between empty blocks in milliseconds (up to one hour). 0 allows an empty block in every slot.
           */
          [[eosio::action]]
          void setibintervl( uint64_t idle_block_interval_ms );
@@ -1270,6 +1280,7 @@ namespace eosiosystem {
          using regproducer2_action = eosio::action_wrapper<"regproducer2"_n, &system_contract::regproducer2>;
          using unregprod_action = eosio::action_wrapper<"unregprod"_n, &system_contract::unregprod>;
          using resumeprod_action = eosio::action_wrapper<"resumeprod"_n, &system_contract::resumeprod>;
+         using resetbpcool_action = eosio::action_wrapper<"resetbpcool"_n, &system_contract::resetbpcool>;
          using setbpquorum_action = eosio::action_wrapper<"setbpquorum"_n, &system_contract::setbpquorum>;
          using setbpstake_action = eosio::action_wrapper<"setbpstake"_n, &system_contract::setbpstake>;
          using stakebp_action = eosio::action_wrapper<"stakebp"_n, &system_contract::stakebp>;

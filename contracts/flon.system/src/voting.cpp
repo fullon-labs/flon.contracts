@@ -206,6 +206,21 @@ namespace eosiosystem {
       });
    }
 
+   void system_contract::resetbpcool( const name& producer ) {
+      require_auth(get_self());
+
+      producer_performance_state_table states(get_self(), get_self().value);
+      auto itr = states.find(producer.value);
+      check(itr != states.end() &&
+            itr->status == static_cast<uint8_t>(bp_performance_status::suspended),
+            "producer is not suspended");
+      check(itr->suspended_until_epoch != 0, "producer cooldown is already cleared");
+
+      states.modify(itr, same_payer, [&](auto& row) {
+         row.suspended_until_epoch = 0;
+      });
+   }
+
    void system_contract::setbpquorum( uint16_t active_bp_quorum ) {
       require_auth(get_self());
       check(active_bp_quorum >= 3 && active_bp_quorum <= 21,

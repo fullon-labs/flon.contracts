@@ -288,6 +288,17 @@ icon: @ICON_BASE_URL@/@VOTING_ICON_URI@
 
 {{producer}} confirms that its block producer node is online and requests re-entry after the on-chain suspension cooldown. A successful transaction places the producer in probation; it does not guarantee immediate schedule admission or qualified status. Missing 12 consecutive assigned slots during probation causes another automatic suspension, with the cooldown escalating up to 48 hours.
 
+<h1 class="contract">resetbpcool</h1>
+
+---
+spec_version: "0.2.0"
+title: Clear a Block Producer Suspension Cooldown
+summary: 'The flon system account clears the recovery cooldown for {{nowrap producer}}'
+icon: @ICON_BASE_URL@/@ADMIN_ICON_URI@
+---
+
+The `flon` system account clears {{producer}}'s suspension cooldown. This action does not resume block production, change the suspended status, or erase warning and suspension history. The producer must still authorize `resumeprod` and enter probation before it can return to the active schedule.
+
 <h1 class="contract">setbpquorum</h1>
 
 ---
@@ -342,4 +353,4 @@ summary: '{{nowrap producer}} sets the producing configuration'
 icon: @ICON_BASE_URL@/@ADMIN_ICON_URI@
 ---
 
-Set the producing configuration. The configuration includes parameters such as the idle block interval and other production-related settings.
+Set the minimum interval between empty blocks in milliseconds. Zero allows an empty block in every available slot; the maximum accepted value is one hour.

@@ -4,10 +4,11 @@ title: BP 投票竞选上线与运行操作手册
 
 # BP 投票竞选上线与运行操作手册
 
-> 版本提示：本文的 1 小时 Epoch 参数适用于包含追加式
-> `rewardplans` 计划表和 `setrwdcfg` action 的目标版本。已有链必须在未来的
-> Epoch 边界追加新计划；修改前的 Epoch 继续使用当时生效的参数，修改后的
-> Epoch 使用新参数，主网 ABI 不采用 `v2` 表名。
+> 主网发布基线（2026-10-30）：Active BP 席位数固定为 21，
+> 最低自质押为 500,000 FLON，初始 21 个 BP 每个自质押
+> 1,000,000 FLON，已提交 BP 生命周期的解质押等待期为 21 天，
+> `enforce_schedule=true`。主网不存在 GLON 兼容需求，治理权统一使用内部
+> `POWER` 单位。
 
 本文是 FullOn Block Producer（BP）投票竞选从测试链验证、主网上线到日常运行的操作手册。它覆盖链下节点准备、链上合约和参数启用，以及 Candidate、Active BP、Standby BP 和 Voter 的实际操作流程。
 
@@ -20,10 +21,10 @@ title: BP 投票竞选上线与运行操作手册
 | Candidate BP | 完成自有质押并注册 | 公开资料、运行同步节点、接受投票 | 未进入 Active/Standby 时无节点服务奖励 |
 | Active BP | 合格 Candidate 中按有效票权排名进入当前法定席位 | 签名和生产区块、保持可用率 | 基础挖矿奖励、GAS Active 奖励；可按公开比例分享基础奖励给 Voter |
 | Standby BP | Active BP 之后排名最高的最多 30 个合格 Candidate | 保持完整节点同步和生产就绪，随时接替 | 按 Epoch Standby 快照获得 GAS Standby 奖励；不领取 Active BP 基础挖矿奖励 |
-| Voter | 锁定 FLON 获得不可转让用途的 GLON，并选择 BP | 动态投票、监督 BP、参与 DAO 治理 | BP 按 `reward_shared_ratio` 分享的基础挖矿奖励 |
-| DAO / `flon` 系统权限 | 治理执行 | 设置安全参数、处理全网事故、逐步扩大 Active BP 法定数量 | 不直接领取上述奖励 |
+| Voter | 锁定 FLON 获得不可转让的内部 POWER，并选择 BP | 动态投票、监督 BP、参与 DAO 治理 | BP 按 `reward_shared_ratio` 分享的基础挖矿奖励 |
+| DAO / `flon` 系统权限 | 治理执行 | 设置安全参数、处理全网事故、管理 Active BP 法定数量 | 不直接领取上述奖励 |
 
-Active 和 Standby 是协议根据快照自动产生的运行状态，不是 Candidate 自己选择的注册类型。当前目标为最多 21 个 Active BP 和 30 个 Standby BP；启动阶段 Active BP 法定数量可在 3 至 21 之间逐步扩大。
+Active 和 Standby 是协议根据快照自动产生的运行状态，不是 Candidate 自己选择的注册类型。主网从启动时即使用 21 个 Active BP 法定席位，另最多保留 30 个 Standby BP，不采用 3→5→7→11→15→21 的过渡配置。
 
 ### 1.1 Active 与 Standby 奖励边界
 
@@ -57,12 +58,12 @@ Standby BP
   -> 激活 PRODUCER_SLOT_STATS 和 GAS_FEE_TOTALS
   -> 测试链部署与端到端演练
   -> 主网创建/核对合约账户和权限
-  -> 部署 voter.reward、gas.reward、flon.system
+  -> 部署 voter.reward、gas.reward、dao.treasury、dao.gov、flon.system
   -> 设置 BP 质押、Active quorum、epoch 和奖励参数
   -> Candidate 质押并注册
   -> Voter 锁仓并投票
   -> 到达 schedule_start，协议自动更新 Active schedule
-  -> 每 1 小时封存基础奖励和 GAS 奖励会计数据
+  -> 按冻结的 Epoch 边界封存基础奖励和 GAS 奖励会计数据
   -> BP、Standby、Voter 各自领取已结算奖励
 ```
 
@@ -126,7 +127,7 @@ Candidate 在注册前准备：
 - 故障响应、密钥轮换、备份恢复和安全事件披露流程；
 - 已同步到 LIB 附近且可随时启用签名的 BP/Standby 节点。
 
-链上 `regproducer` 只保存 URL 和 location，因此网站必须作为公开资料入口，并长期保持可访问。
+链上 `regproducer` 保存官方网站 URL、location、Voter 分享比例和可选的 Status Page URL。Status Page 默认可填 `https://status.flon.network`，Candidate 也可填写自己的 HTTPS 状态与事故页面。
 
 ## 4. 阶段 B：测试链发布与验收
 
@@ -157,36 +158,52 @@ fucli -u "$RPC_URL" push action gas.reward init '["8,FLON"]' -p gas.reward@activ
 - `flon.vote` 和 `flon.stake` 允许系统合约按协议返还锁定资产；
 - `flon.gas` 的 `active` 权限允许 `flon` 在 BP 主动领取时把已结算 GAS 奖励直接支付给受益 BP；
 - `voter.reward` 和 `gas.reward` 可以把用户主动领取的 FLON 转出；
-- GLON issuer 为 `flon`，GLON 的用户间普通转账受到协议限制。
+- 主网治理权使用内部 `8,POWER` 会计，不创建 GLON issuer、代币或用户转账路径。
 
 不要直接照抄另一条链的 `updateauth`。先导出现有权限 JSON、计算变更后的 authority，再由多签审批。
 
-### 4.3 设置启动参数
+### 4.3 设置主网启动参数
 
-以下是当前推荐的测试示例，不代表 DAO 永久参数：
+下表为主网发布冻结值。执行脚本必须由此表生成，不得从测试网导出参数：
+
+| 参数 | 主网值 | 执行含义 |
+| --- | --- | --- |
+| Active BP 席位 | `21` | 上线时直接使用 21 席 |
+| 最低 BP 自质押 | `500000.00000000 FLON` | 注册和保持 schedule 资格的下限 |
+| 初始 BP 自质押 | 每个 `1000000.00000000 FLON` | 21 个 BP 合计 `21000000.00000000 FLON` |
+| 已提交 BP 解质押等待期 | `1814400` 秒 | 21 天 |
+| schedule 自质押强制检查 | `true` | 低于 500,000 FLON 不得进入 schedule |
+| Idle block interval | `12000` ms | 通过 `setibintervl` 设置 |
+| GAS Epoch | `43200` slots | 6 小时 |
+| GAS 健康门槛 | `9500` bp | 95% |
+| GAS 节点池 | `1000` bp | total GAS 的 10% |
+| GAS Active 占比 | `8000` bp | 节点池的 80% |
+| DAO 治理权 | `8,POWER` | 内部会计单位，主网不创建 GLON 兼容路径 |
 
 ```bash
-# 启动期 3 个 Active BP；以后可治理性扩大到 21。
-fucli -u "$RPC_URL" push action flon setbpquorum '[3]' -p flon@active
+# 主网启动即使用 21 个 Active BP。
+fucli -u "$RPC_URL" push action flon setbpquorum '[21]' -p flon@dao
 
 # 强制排班检查自有质押，最低 500,000 FLON，退出等待 21 天。
 fucli -u "$RPC_URL" push action flon setbpstake \
-  '[true,"500000.00000000 FLON",1814400]' -p flon@active
+  '[true,"500000.00000000 FLON",1814400]' -p flon@dao
 
 # 第三个参数仅为旧 ABI 兼容，必须为 0 FLON，不参与奖励计算。
 fucli -u "$RPC_URL" push action flon setprodcfg \
   '["<SCHEDULE_START_UTC>","<REWARD_EPOCH_START_UTC>","0.00000000 FLON"]' \
   -p flon@active
 
-# 1 小时 epoch；95% 用于 Active 健康统计/全网事故判定；
+# 6 小时 GAS epoch；95% 用于 Active 健康统计/全网事故判定；
 # GAS 的 10% 进入节点池，其中 Active 80%、Standby 最多 20%。
 fucli -u "$RPC_URL" push action flon setgasrwcfg \
-  '[true,7200,9500,1000,8000]' -p flon@active
+  '[true,43200,9500,1000,8000]' -p flon@dao
+
+fucli -u "$RPC_URL" push action flon setibintervl '[12000]' -p flon@active
 ```
 
 规则：
 
-- `setbpquorum` 只能设置 3–21；
+- `setbpquorum` 只能设置 3–21，但本次主网冻结值为 21；
 - `setbpstake` 的等待期必须为 1–365 天；
 - `schedule_start` 必须在未来；`reward_epoch_start >= schedule_start`；
 - 基础挖矿预算固定为 500,000,000 FLON，每 315,360,000 个奖励资格区块减半；
@@ -203,7 +220,7 @@ fucli -u "$RPC_URL" push action flon setgasrwcfg \
 4. Active BP 正常出块，确认 Standby Epoch 快照与候补排名正确；
 5. `onblock` 将基础奖励 Epoch 推进至 `SEALED` 后，BP/Voter 奖励可领取；
 6. `onblock` 完成 GAS Epoch 的有界结算后，节点 GAS 奖励可领取；
-7. `subvote` 立即收回并销毁等量 GLON，等待期后退回 FLON；
+7. `subvote` 立即减少等量内部 POWER，等待期后退回 FLON；
 8. 模拟低可用率、suspended、冷却和 `resumeprod` probation；
 9. 模拟全网事故，确认进入 incident hold，不能自动误罚多数 BP；
 10. 节点重启、合约升级和 replay 后统计一致。
@@ -220,9 +237,101 @@ fucli -u "$RPC_URL" push action flon setgasrwcfg \
 - 所有初始 Candidate 已同步并完成 block-signing 演练；
 - schedule 切换窗口安排人工值守，不与 Core 升级、网络迁移同时进行。
 
-启动后每分钟观察 proposed/active schedule、head/LIB 延迟、漏块率和 P2P。连续两个 epoch 正常后，再考虑把 Active quorum 从 3 逐步扩大到 5、7、11、15、21。每次扩大前都要确认新增 Candidate 已达到生产要求。
+启动后每分钟观察 proposed/active schedule、head/LIB 延迟、漏块率和 P2P。主网不使用逐步扩容 quorum；必须在 `schedule_start` 前完成全部 21 个初始 BP 的 1,000,000 FLON 自质押、注册和节点验收。
 
-### 5.1 2026-10-23 主网合约升级记录
+### 5.1 主网发布 Action 清单
+
+下列 Action 必须使用经冻结的主网脚本按顺序执行。每个写操作前重新读取 chain ID、目标账户、当前权限和 live table；每笔写操作后保存交易 ID、trace、区块号和 LIB 证据。
+
+#### 5.1.1 发布物与合约部署
+
+1. 冻结 Core、CDT、contracts commit/tag 及 WASM/ABI SHA-256。
+2. 确认主网构建使用 `FLON_TESTNET_SHORT_BP_REFUND=OFF`，不得带入 30 分钟测试网退款开关。
+3. 按 `setcode -> setabi -> hash 核对` 部署 `voter.reward`、`gas.reward`、`dao.treasury`、`dao.gov`、`flon.system`。
+4. 主网不部署 `migrateunit`、`syncpower`、GLON 兼容或任何一次性测试网迁移合约。
+5. `flon::init` 只能在确认全新、未初始化链时执行；已有链禁止重复初始化。
+
+原生部署 Action 为：
+
+```text
+flon::setcode(account, vmtype, vmversion, code)
+flon::setabi(account, abi)
+```
+
+#### 5.1.2 权限和 `linkauth`
+
+- `dao.gov@active`、`dao.treasury@active`、`voter.reward@active`、`gas.reward@active` 必须包含各自 `@eosio.code`；
+- `flon@active` 必须允许 `flon@eosio.code` 执行内联 action；
+- `flon@dao` 由 `dao.gov@eosio.code` 控制；
+- 将 `flon::setbpquorum`、`flon::setbpstake`、`flon::setgasrwcfg` 链接到 `flon@dao`；
+- 保留可审计的 owner 恢复路径，不得直接复制测试网 authority JSON。
+
+#### 5.1.3 初始化与系统参数
+
+```text
+voter.reward::init(["8,FLON"])
+gas.reward::init(["8,FLON"])
+dao.treasury::init(["dao.gov"])
+dao.gov::init(["flon","flon","8,POWER"])
+
+flon::setbpquorum([21])
+flon::setbpstake([true,"500000.00000000 FLON",1814400])
+flon::setprodcfg([SCHEDULE_START_UTC,REWARD_EPOCH_START_UTC,"0.00000000 FLON"])
+flon::setgasrwcfg([true,43200,9500,1000,8000])
+flon::setibintervl([12000])
+```
+
+`SCHEDULE_START_UTC` 和 `REWARD_EPOCH_START_UTC` 必须在发布会上最终冻结，且为未来时间。`setprodcfg` 的第三个兼容参数必须精确为 `0.00000000 FLON`。`setrwdcfg` 只用于需要保留历史计划的已有链迁移，新主网不执行。任何环境都不得调用 `closeepoch`。
+
+#### 5.1.4 Treasury 和 DAO 治理
+
+Treasury 只启用主网 FLON 资产：
+
+```text
+dao.treasury::setasset(["flon.token","8,FLON",true])
+```
+
+不得复制测试网 `flon.mtoken` 配置。DAO 依次设置 `setconfig`、`setriskcfg`、`setactrisk`、`setallow`，再执行 `sealadmin`。测试网的分钟级 voting delay、voting period 和 timelock 不得带入主网；绝对 POWER 门槛和时间参数需在发布会上单独冻结。风险级别百分比基线为：
+
+| 级别 | 提案门槛 | 通过率 | 法定人数/POWER 占比 | 附议数 |
+| --- | ---: | ---: | ---: | ---: |
+| L1 | 5% | 50.01% | 1% | 1 |
+| L2 | 15% | 60% | 8% | 1 |
+| L3 | 25% | 67% | 15% | 2 |
+| L4 | 40% | 75% | 30% | 3 |
+
+Action 风险级别和白名单基线：
+
+| Action | 风险 | 执行权限 | `max_data_bytes` |
+| --- | --- | --- | ---: |
+| `dao.gov::setconfig` | L4 | `dao.gov@active` | 128 |
+| `dao.gov::setallow` | L4 | `dao.gov@active` | 64 |
+| `dao.treasury::setasset` | L4 | `dao.gov@active` | 32 |
+| `dao.treasury::reserve` | L3 | `dao.gov@active` | 128 |
+| `dao.treasury::pay` | L3 | `dao.gov@active` | 320 |
+| `dao.treasury::release` | L3 | `dao.gov@active` | 288 |
+| `dao.treasury::closegrant` | L1 | `dao.gov@active` | 16 |
+| `flon::setbpquorum` | L4 | `flon@dao` | 16 |
+| `flon::setbpstake` | L4 | `flon@dao` | 32 |
+| `flon::setgasrwcfg` | L3 | `flon@dao` | 16 |
+
+`setriskcfg` 和 `setactrisk` 本身不得加入执行白名单。`sealadmin` 是最后一个不可逆步骤；在权限、风险映射、白名单和端到端提案未验证前禁止执行。
+
+#### 5.1.5 初始 21 BP 和 Canary 验证
+
+每个初始 BP 必须先执行：
+
+```text
+flon::stakebp([BP_ACCOUNT,"1000000.00000000 FLON"])
+flon::regproducer([BP_ACCOUNT,BLOCK_SIGNING_PUBLIC_KEY,WEBSITE_URL,
+                   ISO_LOCATION,VOTER_SHARE_BP,STATUS_PAGE_URL])
+```
+
+第 21 个 BP 完成后核对：21 条初始 stake 均为 1,000,000 FLON，总额精确为 21,000,000 FLON，全部注册信息、block authority、官方网站和 Status Page URL 完整。
+
+上线前先完成一个信号提案：`propose -> setforum -> endorse -> activate -> castvote -> finalize`。再完成一个最小可执行提案：上述流程后 `queue -> 等待 timelock -> execute`，并核对 Treasury assets/grants/账户余额守恒、trace 和 LIB。
+
+### 5.2 2026-10-23 主网合约升级记录
 
 本次升级使用合约 commit `2cf0c11` 和 FLON CDT 0.9.0 在 xch 构建。发布物及链上验证结果：
 
@@ -246,12 +355,12 @@ fucli -u "$RPC_URL" push action flon setgasrwcfg \
 
 ```bash
 fucli -u "$RPC_URL" push action flon stakebp \
-  '["<BP_ACCOUNT>","500000.00000000 FLON"]' -p <BP_ACCOUNT>@active
+  '["<BP_ACCOUNT>","1000000.00000000 FLON"]' -p <BP_ACCOUNT>@active
 ```
 
-质押 FLON 转入 `flon.stake`，记录在 `flon::bpstakes`。最低金额以 `bpstakecfg` 链上值为准。
+质押 FLON 转入 `flon.stake`，记录在 `flon::bpstakes`。主网最低门槛是 500,000 FLON，但初始 21 个 BP 统一按 1,000,000 FLON 执行；最终以 `bpstakecfg` 链上值为准。
 
-`bpstakes` 使用 `generation` 标识每轮自质押生命周期，并使用 `committed` 标识该轮保证金是否已经用于 BP 注册。BP 自质押不会生成 GLON，也不计入 DAO 治理票权。
+`bpstakes` 使用 `generation` 标识每轮自质押生命周期，并使用 `committed` 标识该轮保证金是否已经用于 BP 注册。BP 自质押不会生成内部 POWER，也不计入 DAO 治理票权。
 
 ### 6.2 注册 Candidate
 
@@ -259,11 +368,11 @@ fucli -u "$RPC_URL" push action flon stakebp \
 
 ```bash
 fucli -u "$RPC_URL" push action flon regproducer \
-  '["<BP_ACCOUNT>","<BLOCK_SIGNING_PUBLIC_KEY>","https://bp.example",<ISO_LOCATION>,<VOTER_SHARE_BP>]' \
+  '["<BP_ACCOUNT>","<BLOCK_SIGNING_PUBLIC_KEY>","https://bp.example",<ISO_LOCATION>,<VOTER_SHARE_BP>,"https://status.flon.network"]' \
   -p <BP_ACCOUNT>@active
 ```
 
-`VOTER_SHARE_BP` 使用 basis points：`0` 为不分享，`1000` 为 10%，`10000` 为 100%。多签 block authority 使用 `regproducer2`。候选人列表必须在注册前明确披露分享比例；重新注册修改比例只影响后续记录的 epoch，不追溯改变已产生奖励。
+`VOTER_SHARE_BP` 使用 basis points：`0` 为不分享，`1000` 为 10%，`10000` 为 100%。最后一个 `status_url` 为可选扩展字段，默认填写 `https://status.flon.network`，BP 可改为自己的 HTTPS 状态页。多签 block authority 使用 `regproducer2`。候选人列表必须在注册前明确披露分享比例；重新注册修改比例只影响后续记录的 epoch，不追溯改变已产生奖励。
 
 ### 6.3 保持候选资格
 
@@ -361,7 +470,7 @@ Standby 池按最多 30 席归一化。未满 30 个合格 Standby 时，空缺�
 
 ## 9. Voter 质押、投票、改票、撤票和领奖
 
-### 9.1 锁定 FLON 并获得 GLON
+### 9.1 锁定 FLON 并获得内部 POWER
 
 ```bash
 fucli -u "$RPC_URL" push action flon addvote \
@@ -371,9 +480,9 @@ fucli -u "$RPC_URL" push action flon addvote \
 效果：
 
 1. FLON 转入 `flon.vote`；
-2. 用户收到等量 GLON 作为治理权凭证；
+2. 系统为用户增加等量内部 POWER 记账，不发行 GLON 代币；
 3. 新增票权排队到下一奖励 epoch 生效；
-4. GLON 不应在用户之间自由转账，不能与锁定 FLON 的赎回权脱钩。
+4. POWER 不可转账，必须与锁定 FLON 的赎回权严格对应。
 
 只执行 `addvote` 但未选择 Candidate，不会产生 BP 排名分配。
 
@@ -401,7 +510,7 @@ fucli -u "$RPC_URL" push action flon subvote \
   '["<VOTER>","<QUANTITY> FLON"]' -p <VOTER>@active
 ```
 
-`subvote` 会立即把等量 GLON 转回系统并销毁，票权变化排队到下一 epoch；FLON 进入待退款状态。当前实现同一账户只能有一笔待退款。
+`subvote` 会立即减少等量内部 POWER，票权变化排队到下一 epoch；FLON 进入待退款状态。当前实现同一账户只能有一笔待退款。
 
 等待期成熟后可由 owner 或任何第三方触发，资金只能退回 owner：
 
@@ -409,7 +518,7 @@ fucli -u "$RPC_URL" push action flon subvote \
 fucli -u "$RPC_URL" push action flon voterefund '["<VOTER>"]'
 ```
 
-当前合约等待期为 180 秒；主网前应确认该参数是否符合最终治理决定。
+此处为 Voter 退款等待期，与 BP 已提交生命周期的 21 天自质押退款期不同。主网发布前必须分别核对两个参数，不得将测试网的短退款时间误用到 BP 自质押。
 
 ### 9.4 领取 Voter 奖励
 
@@ -426,7 +535,7 @@ fucli -u "$RPC_URL" push action voter.reward claimrewards \
 
 当前版本不再公开 `closeepoch`、`beginsettle`、`settlenext`、`finalizeepoch`，也不依赖 Keeper 推进协议状态。
 
-每个 1 小时 Epoch 到期后，`onblock` 以严格有界的步骤推进：
+每个已冻结的 Epoch 到期后，`onblock` 以严格有界的步骤推进；本次主网 GAS Epoch 为 43,200 slots（约 6 小时）：
 
 ```text
 OPEN
@@ -498,13 +607,15 @@ fucli -u "$RPC_URL" get table voter.reward voter.reward voters
 只有以下条件全部满足，才能宣布投票竞选正式上线：
 
 - 所有共识节点版本一致，feature 激活和 replay 均验证通过；
-- 三个合约 code/ABI hash 与冻结发布物一致；
-- 权限、挖矿储备、`flon.gas` 奖励余额和 GLON issuer 已复核；
+- `voter.reward`、`gas.reward`、`dao.treasury`、`dao.gov`、`flon.system` 的 code/ABI hash 与冻结发布物一致；
+- 权限、挖矿储备、`flon.gas` 奖励余额和内部 `8,POWER` 会计已复核，主网无 GLON 依赖；
+- 21 个初始 BP 各自质押 1,000,000 FLON，总额 21,000,000 FLON，`enforce_schedule=true`；
 - Active schedule 达到治理设定 quorum，LIB 持续推进；
 - 至少一个完整基础 epoch 和 GAS epoch 已结算；
 - Active BP、Standby BP、Voter 三类 `claimrewards` 均实测到账；
 - addvote、voteproducer、subvote、voterefund 全流程完成；
 - suspended、resumeprod、probation 和 incident hold 已在测试链演练；
+- DAO 信号与可执行提案全流程已演练，Treasury 余额守恒和 LIB 已验证；
 - 只读监控、告警、值班和事故沟通渠道均已运行。
 
 ## 13. 不应执行的操作

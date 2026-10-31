@@ -749,6 +749,15 @@ BOOST_FIXTURE_TEST_CASE( stake_to_another_user_not_from_refund, eosio_system_tes
 BOOST_AUTO_TEST_SUITE_END()
 BOOST_AUTO_TEST_SUITE(eosio_system_producer_tests)
 
+BOOST_FIXTURE_TEST_CASE( idle_block_interval_matches_core_limit, eosio_system_tester ) try {
+   BOOST_REQUIRE_EQUAL(success(), push_action(config::system_account_name, "setibintervl"_n,
+      mvo()("idle_block_interval_ms", uint64_t{3600 * 1000})));
+   BOOST_REQUIRE_EQUAL(wasm_assert_msg("idle block interval must not exceed one hour"),
+      push_action(config::system_account_name, "setibintervl"_n,
+         mvo()("idle_block_interval_ms", uint64_t{3600 * 1000 + 1})));
+}
+FC_LOG_AND_RETHROW()
+
 BOOST_FIXTURE_TEST_CASE( producer_self_stake_qualification_and_refund, eosio_system_tester ) try {
    const name producer = "alice1111111"_n;
    const auto minimum = core_sym::from_string("500.0000");

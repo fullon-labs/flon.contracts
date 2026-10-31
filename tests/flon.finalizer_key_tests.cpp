@@ -560,8 +560,21 @@ BOOST_FIXTURE_TEST_CASE(switchtosvnn_not_enough_finalizer_keys_tests, finalizer_
    // Register 20 finalizer keys
    register_finalizer_keys(producer_names, 20);
 
-   // Have only 20 finalizer keys, short by 1
-   BOOST_REQUIRE_EQUAL( wasm_assert_msg( "not enough top producers have registered finalizer keys, has 20, require 21" ),
+   // The missing key belongs to an active producer.
+   BOOST_REQUIRE_EQUAL( wasm_assert_msg( "active producer defproduceru has no active finalizer key" ),
+                        push_action( config::system_account_name, "switchtosvnn"_n, mvo()) );
+}
+FC_LOG_AND_RETHROW()
+
+BOOST_FIXTURE_TEST_CASE(switchtosvnn_rejects_unscheduled_substitute_test, finalizer_key_tester) try {
+   auto producer_names = active_and_vote_producers(22);
+   register_finalizer_keys(producer_names, 20);
+   BOOST_REQUIRE_EQUAL(success(), register_finalizer_key(
+      producer_names[21], key_pair[21].pub_key, key_pair[21].pop));
+
+   // A key from the 22nd voted producer cannot substitute for the missing
+   // key of the 21st producer in the active block-production schedule.
+   BOOST_REQUIRE_EQUAL( wasm_assert_msg( "active producer defproduceru has no active finalizer key" ),
                         push_action( config::system_account_name, "switchtosvnn"_n, mvo()) );
 }
 FC_LOG_AND_RETHROW()
