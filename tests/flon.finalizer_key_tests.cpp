@@ -111,6 +111,39 @@ struct finalizer_key_tester : eosio_system_tester {
       }
    }
 
+   void mark_producer_suspended_for_test(const name& producer) {
+      // Matches bp_performance_status::suspended in the contract ABI.
+      constexpr int suspended_status = 4;
+      const auto data = abi_ser.variant_to_binary("producer_performance_state", mvo()
+         ("producer", producer)
+         ("status", suspended_status)
+         ("warning_count", 1)
+         ("suspended_until_epoch", 2)
+         ("suspension_count", 1)
+         ("probation_started_epoch", 0),
+         abi_serializer::create_yield_function(abi_serializer_max_time));
+      for (auto* node : {control.get(), validating_node.get()}) {
+         auto& db = node->mutable_db();
+         const auto* table = db.find<eosio::chain::table_id_object, eosio::chain::by_code_scope_table>(
+            boost::make_tuple(config::system_account_name, config::system_account_name, "bpstatus"_n));
+         if (!table) {
+            table = &db.create<eosio::chain::table_id_object>([&](auto& row) {
+               row.code = config::system_account_name;
+               row.scope = config::system_account_name;
+               row.table = "bpstatus"_n;
+               row.payer = config::system_account_name;
+            });
+         }
+         db.create<eosio::chain::key_value_object>([&](auto& row) {
+            row.t_id = table->id;
+            row.primary_key = producer.to_uint64_t();
+            row.payer = config::system_account_name;
+            row.value.assign(data.data(), data.size());
+         });
+         db.modify(*table, [](auto& row) { ++row.count; });
+      }
+   }
+
    // Verify finalizers_table and last_prop_fins_table match
    void verify_last_proposed_finalizers(const std::vector<name>& producer_names) {
       auto last_finalizers = get_last_prop_finalizers_info();
@@ -752,6 +785,57 @@ BOOST_FIXTURE_TEST_CASE(update_elected_producers_finalizers_replaced_test, final
    last_finkey_ids_2.erase(producerv_id);
    last_finkey_ids_2.insert(producerw_id);
    BOOST_REQUIRE_EQUAL( true, last_finkey_ids_2 == last_finkey_ids_3 );
+}
+FC_LOG_AND_RETHROW()
+
+BOOST_FIXTURE_TEST_CASE(unregistered_producer_is_replaced_in_proposed_policy, finalizer_key_tester) try {
+   auto producers = active_and_vote_producers(22);
+   register_finalizer_keys(producers, 22);
+   BOOST_REQUIRE_EQUAL(success(), push_action(config::system_account_name, "switchtosvnn"_n, mvo()));
+   produce_blocks(504);
+   BOOST_REQUIRE(control->head_finality_data().has_value());
+
+   std::vector<name> active(producers.begin(), producers.begin() + 21);
+   verify_last_proposed_finalizers(active);
+   const auto old_ids = get_last_prop_fin_ids();
+   const auto leaving = producers.front();
+   const auto standby = producers[21];
+   const auto leaving_id = get_finalizer_info(leaving)["active_key_id"].as_uint64();
+   const auto standby_id = get_finalizer_info(standby)["active_key_id"].as_uint64();
+
+   BOOST_REQUIRE_EQUAL(success(), push_action(leaving, "unregprod"_n, mvo()("producer", leaving)));
+   produce_blocks(504);
+
+   auto expected_ids = old_ids;
+   expected_ids.erase(leaving_id);
+   expected_ids.insert(standby_id);
+   BOOST_REQUIRE_EQUAL(21u, expected_ids.size());
+   BOOST_REQUIRE(expected_ids == get_last_prop_fin_ids());
+   BOOST_REQUIRE(control->head_finality_data().has_value());
+}
+FC_LOG_AND_RETHROW()
+
+BOOST_FIXTURE_TEST_CASE(suspended_producer_is_replaced_in_proposed_policy, finalizer_key_tester) try {
+   auto producers = active_and_vote_producers(22);
+   register_finalizer_keys(producers, 22);
+   BOOST_REQUIRE_EQUAL(success(), push_action(config::system_account_name, "switchtosvnn"_n, mvo()));
+   produce_blocks(504);
+
+   const auto old_ids = get_last_prop_fin_ids();
+   BOOST_REQUIRE_EQUAL(21u, old_ids.size());
+   const auto suspended_id = get_finalizer_info(producers.front())["active_key_id"].as_uint64();
+   const auto standby_id = get_finalizer_info(producers[21])["active_key_id"].as_uint64();
+
+   // The epoch classifier is tested separately; inject its suspended output
+   // to exercise the election filter without producing an hour of missed slots.
+   mark_producer_suspended_for_test(producers.front());
+   produce_blocks(504);
+
+   auto expected_ids = old_ids;
+   expected_ids.erase(suspended_id);
+   expected_ids.insert(standby_id);
+   BOOST_REQUIRE_EQUAL(21u, expected_ids.size());
+   BOOST_REQUIRE(expected_ids == get_last_prop_fin_ids());
 }
 FC_LOG_AND_RETHROW()
 
